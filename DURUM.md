@@ -52,8 +52,12 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
    Endpoint: `http://100.101.117.47:4000/v1` · `Authorization: Bearer <key>`
    Sağlık: `curl http://100.101.117.47:4000/health/liveliness` → `"I'm alive!"`
 3. **Pi dosya sunucusu** — `llm-repo.service` (`python3 -m http.server 8080 --directory /opt/llm-repo`).
-   1 Eylül'de içine `bootstrap.sh` + `KURTARMA-README.md` kondu; **öncesinde dizin boştu**, yani
-   internetsiz kurtarma yolu kâğıt üzerindeydi.
+   1 Eylül'de içine `bootstrap.sh` + `KURTARMA-README.md` + `DURUM.md` kondu; **öncesinde dizin
+   boştu**, yani internetsiz kurtarma yolu kâğıt üzerindeydi.
+   **`llm-repo-sync.timer`** (günlük, `Persistent=true`) dosyaları GitHub'dan tazeler:
+   indirme başarısızsa eldeki kopya korunur, `.sh` dosyaları `bash -n` ile doğrulanır,
+   bozuk inen script yerine konmaz. `authorized_keys` bilerek senkron listesinde değildir.
+   Elle tetikleme: `sudo /usr/local/bin/llm-repo-sync`
 4. **LM Studio marvin'de** — `~/.lmstudio/bin/lms`, port **1234**, `--bind 0.0.0.0`.
    - Model dizini: `~/.lmstudio/models` → **symlink** → `/mnt/models/lmstudio` (17 GB, 2 adet .gguf)
    - Yüklü model: `qwen/qwen3.8-27b` (Q4_K_M) + `text-embedding-nomic-embed-text-v1.5`
@@ -96,6 +100,12 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   public key listesini çekip kurar. Var olan anahtarlar korunur, mükerrer satır eklenmez,
   indirilen içerik public key değilse dosyaya hiç dokunulmaz. Makinede test edildi
   (`0 yeni / 1 toplam`, izinler `600 marvin:marvin`, `.ssh` `700`).
+- ✅ `llm-repo-sync.timer` kuruldu: dosya sunucusu artık GitHub'dan kendini tazeliyor.
+  Elle senkron unutulduğu için Pi bir gün boyunca SSH anahtarı adımı olmayan eski
+  `bootstrap.sh`'ı servis etmişti — hata vermeden. Bu sınıf arıza kapatıldı.
+- ✅ `pi-setup.sh` gerçekle hizalandı: LiteLLM yapılandırmasını hâlâ eski Ollama
+  adresiyle (`ollama_chat/qwen3:14b`, `http://llm-test:11434`) üretiyordu; Pi yeniden
+  kurulsa gateway var olmayan endpoint'e bakardı. Artık `MODEL_BASE`/`MODEL_NAME`.
 - ✅ WoL doğrulandı: `Wake-on=g`, kart desteği `pumbg`. Önceki "g değil" uyarısı
   `ethtool` çıktısını yanlış ayrıştıran bir bug'dı, düzeltildi.
 
@@ -131,5 +141,10 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - Repo public: script'lerde secret yok ama iç ağ topolojisi (MAC/IP) README'de görünüyor.
 - SSH anahtarı zinciri Pi'ye bağlı: `bootstrap.sh` anahtarları `:8080/authorized_keys`
   adresinden çeker. Pi çökerse veya `/opt/llm-repo` boşalırsa format sonrası makineye
-  girilemez (kurulum yine tamamlanır, sadece uyarı basar). Anahtar dosyasını SD kart
-  yedeğine dahil et.
+  girilemez (kurulum yine tamamlanır, sadece uyarı basar). `authorized_keys` senkronla
+  tazelenmez — repoda yoktur; SD kart yedeğine dahil et.
+- **Çalışan sistem ile onu yeniden üreten script birbirinden ayrışabiliyor.** İki kez
+  yaşandı: elle düzeltilen LiteLLM yapılandırması `pi-setup.sh`'a yansımamıştı, ve Pi'nin
+  servis ettiği `bootstrap.sh` elle senkron unutulduğu için eskimişti. İkisi de hata
+  vermeden, yalnızca gerçek bir kurtarma anında ortaya çıkacak cinstendi. Bir şeyi
+  makinede elle düzeltirsen script'e de işle.
