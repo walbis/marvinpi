@@ -46,6 +46,18 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
    - Teşhis: `sudo rpc amtinfo` (araç `/usr/local/bin/rpc`, rpc-go). `rpc activate/configure`
      komutları LMS olmadığı için 20 sn timeout + tekrar döngüsüne girer, **yavaş ama tamamlar**.
    - Bu BIOS'ta Serial Console Redirection **yok** + KF'de iGPU yok → BIOS ekranı uzaktan görülemez.
+   - **⚠ CCM KİLİDİ — uzaktan kurtarmanın önündeki asıl engel budur.**
+     AMT `rpc activate -local -ccm` ile **Client Control Mode**'da aktive edilmiş.
+     Ölçüm (1 Eyl 2026): `OptInRequired=4294967295` (tüm yönlendirmeler için
+     kullanıcı onayı şart), `CanModifyOptInPolicy=0` (politika uzaktan değişmez).
+     Sonuç: boot yönlendirme / IDER / SOL çağrıları `AccessDenied` döner, çünkü
+     makinenin **ekranında** beliren onay kodunun girilmesi gerekir. KVM olmadığı
+     için o kod okunamaz. Uzaktan yapılabilen tek şey **güç kontrolü** (aç/kapat/
+     reset) — onay istemeyen tek işlem sınıfı odur.
+     **Çözüm: ACM (Admin Control Mode) ile yeniden aktive etmek.** ACM'de
+     `OptInRequired=0` yapılabilir ve PXE/IDER/SOL uzaktan kullanılabilir hâle gelir.
+     ACM ya MEBx üzerinden yerel kurulumla ya da provisioning sertifikasıyla olur;
+     ikisi de **bir kez fiziksel erişim** ister.
    - **Firmware yetenekleri (1 Eyl 2026'da ölçüldü, `tools/amt-check.py`):**
      ForcePXEBoot ✅ · ForceHardDriveBoot ✅ · ForceCDorDVDBoot ✅ · IDER ✅ · SOL ✅ ·
      BIOSSetup ✅ · BIOSPause ❌ · KVM ❌ (iGPU yok).
@@ -137,6 +149,13 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   yok (ISM, tam AMT değil). Planın "AMT'den tek seferlik PXE ile tetiklenecek" varsayımı
   yanlıştı ve bu ancak gerçek bir arızada, 1 Eylül'de anlaşıldı. Netboot'un tetiklenmesi
   BIOS boot sırasının `[disk → ağ]` olmasına bağlı — bu da bir kez fiziksel erişim ister.
+- **Yetenek listesi ≠ kullanabilmek.** `AMT_BootCapabilities` PXE/IDER/SOL için "VAR"
+  diyordu ve doğruydu — ama CCM hepsini kullanıcı onayı kapısının arkasına kilitliyor.
+  Bir yeteneği "var" görmek yetmez; erişim politikasını (`IPS_OptInService`) da sorgula.
+- **Aktivasyon kipi kritik bir mimari karardır, teknik ayrıntı değil.** CCM'e düşmek
+  uzaktan yönetimi "sadece güç"e indirger ve bu ancak gerçek bir arızada fark edilir.
+  MEBx aktivasyonu tutmadığı için CCM'e düşülmüş; o an pratik görünen tercih,
+  1 Eylül'de makinenin uzaktan kurtarılamamasının doğrudan sebebi oldu.
 - **Firmware'in yeteneklerini arayüze bakarak değil, firmware'e sorarak öğren.**
   AMT WebUI dar bir arayüzdür ve sunduğu seçenekler donanımın yapabildiklerinin
   tamamı değildir. `tools/amt-check.py` firmware'e `AMT_BootCapabilities` ile

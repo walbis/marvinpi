@@ -21,14 +21,34 @@ Bagimlilik yok - yalnizca Python standart kutuphanesi.
 """
 import os, ssl, sys, urllib.request, re
 
+
+def _parola():
+    """Parolayi sirasiyla: AMT_PASSWORD ortam degiskeni -> macOS Keychain.
+    Keychain kullanimi parolanin komut gecmisine ve dosyaya girmesini onler."""
+    import os, subprocess
+    p = os.environ.get("AMT_PASSWORD")
+    if p:
+        return p
+    try:
+        r = subprocess.run(
+            ["security", "find-generic-password", "-a", os.environ.get("USER", ""),
+             "-s", "marvin-amt", "-w"],
+            capture_output=True, text=True, timeout=10)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    except Exception:
+        pass
+    return None
+
 host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
 port = sys.argv[2] if len(sys.argv) > 2 else "16993"
 user = sys.argv[3] if len(sys.argv) > 3 else "admin"
-pw   = os.environ.get("AMT_PASSWORD")
+pw   = _parola()
 
 if not pw:
-    sys.exit("HATA: AMT_PASSWORD ortam degiskeni bos.\n"
-             "  AMT_PASSWORD='parola' python3 amt-check.py localhost 16993")
+    sys.exit("HATA: parola bulunamadi.\n"
+             "  Ya AMT_PASSWORD ortam degiskenini ver,\n"
+             "  ya da Keychain'e kaydet: security add-generic-password -a \"$USER\" -s marvin-amt -w")
 
 url = f"https://{host}:{port}/wsman"
 

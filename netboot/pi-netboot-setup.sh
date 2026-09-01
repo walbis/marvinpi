@@ -29,11 +29,15 @@ for f in dnsmasq-netboot.conf grub.cfg preseed.cfg.template rescue-preseed.cfg; 
 done
 
 # ---------- 1) dnsmasq ----------
-if ! command -v dnsmasq >/dev/null 2>&1; then
-  log "dnsmasq kuruluyor..."
+# DIKKAT: 'command -v dnsmasq' YETMEZ. dnsmasq-base yalnizca calistirilabiliri
+# saglar; /etc/dnsmasq.d dizinini ve systemd servisini 'dnsmasq' paketi saglar.
+# Bu ayrim atlandiginda kurulum sessizce yarim kalir.
+if ! dpkg-query -W -f='${Status}' dnsmasq 2>/dev/null | grep -q "install ok installed"; then
+  log "dnsmasq paketi kuruluyor (dnsmasq-base yeterli degil)..."
   apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dnsmasq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y dnsmasq
 fi
+[[ -d /etc/dnsmasq.d ]] || die "/etc/dnsmasq.d yok — dnsmasq paketi kurulamadi."
 
 # ---------- 2) Netboot imajı ----------
 mkdir -p "$TFTP_ROOT"
@@ -47,7 +51,13 @@ if [[ ! -f "$TFTP_ROOT/debian-installer/amd64/linux" ]]; then
 else
   log "Netboot imajı zaten var, indirilmedi."
 fi
-[[ -f "$TFTP_ROOT/bootnetx64.efi" ]] || warn "bootnetx64.efi bulunamadı — UEFI istemci açılamayabilir."
+# Debian imajinda EFI acilis dosyasi kokte degil, alt dizinde durur.
+EFI_REL="debian-installer/amd64/bootnetx64.efi"
+if [[ -f "$TFTP_ROOT/$EFI_REL" ]]; then
+  log "UEFI açılış dosyası yerinde: $EFI_REL"
+else
+  warn "$EFI_REL bulunamadı — UEFI istemci açılamaz. İmaj eksik inmiş olabilir."
+fi
 
 # ---------- 3) GRUB menüsü ----------
 # Debian'ın kendi menüsünün üzerine bizimkini koyarız (varsayılan: diskten aç).
