@@ -24,7 +24,7 @@ warn(){ echo -e "\033[1;33m!!  $*\033[0m" >&2; }
 die(){  echo -e "\033[1;31mHATA: $*\033[0m" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Root gerekli: sudo bash pi-netboot-setup.sh"
-for f in dnsmasq-netboot.conf grub.cfg preseed.cfg.template; do
+for f in dnsmasq-netboot.conf grub.cfg preseed.cfg.template rescue-preseed.cfg; do
   [[ -f "$SRC_DIR/$f" ]] || die "Kaynak dosya yok: $SRC_DIR/$f"
 done
 
@@ -84,6 +84,10 @@ awk -v h="$HASH" '{gsub(/__PASSWORD_HASH__/, h); print}' \
 chmod 644 "$REPO_DIR/preseed.cfg"
 grep -q '__PASSWORD_HASH__' "$REPO_DIR/preseed.cfg" && die "Karma yerleştirilemedi."
 log "preseed hazır: $REPO_DIR/preseed.cfg (http://<pi-ip>:8080/preseed.cfg)"
+
+# Ekransız kurtarma preseed'i — parola içermez, olduğu gibi kopyalanır.
+install -m 644 "$SRC_DIR/rescue-preseed.cfg" "$REPO_DIR/rescue-preseed.cfg"
+log "kurtarma preseed'i hazır: $REPO_DIR/rescue-preseed.cfg"
 
 # ---------- 6) dnsmasq yapılandırması ----------
 install -m 644 "$SRC_DIR/dnsmasq-netboot.conf" /etc/dnsmasq.d/netboot.conf
