@@ -46,6 +46,10 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
    - Teşhis: `sudo rpc amtinfo` (araç `/usr/local/bin/rpc`, rpc-go). `rpc activate/configure`
      komutları LMS olmadığı için 20 sn timeout + tekrar döngüsüne girer, **yavaş ama tamamlar**.
    - Bu BIOS'ta Serial Console Redirection **yok** + KF'de iGPU yok → BIOS ekranı uzaktan görülemez.
+   - **Firmware yetenekleri (1 Eyl 2026'da ölçüldü, `tools/amt-check.py`):**
+     ForcePXEBoot ✅ · ForceHardDriveBoot ✅ · ForceCDorDVDBoot ✅ · IDER ✅ · SOL ✅ ·
+     BIOSSetup ✅ · BIOSPause ❌ · KVM ❌ (iGPU yok).
+     WebUI bunların hiçbirini sunmaz; `tools/amt-boot.py` WS-MAN üzerinden kullanır.
    - Şifre unutulursa: BIOS → Advanced → AMT Configuration → Unconfigure ME → Enabled → F10,
      sonra `sudo rpc activate -local -ccm -password 'YENİ'`.
 2. **Pi gateway** — LiteLLM + Postgres (Docker, `/opt/llm-gw`), master key `.env` içinde (chmod 600).
@@ -133,9 +137,11 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   yok (ISM, tam AMT değil). Planın "AMT'den tek seferlik PXE ile tetiklenecek" varsayımı
   yanlıştı ve bu ancak gerçek bir arızada, 1 Eylül'de anlaşıldı. Netboot'un tetiklenmesi
   BIOS boot sırasının `[disk → ağ]` olmasına bağlı — bu da bir kez fiziksel erişim ister.
-- **Uzaktan görüş sıfır.** KVM yok, SOL yok, AMT yalnızca güç veriyor. Makine açık ama
-  işletim sistemi ayağa kalkmıyorsa uzaktan yapılabilecek TEK şey reset atmaktır; o da
-  tutmazsa makinenin başına gitmek zorunludur. 1 Eylül'de tam olarak bu yaşandı.
+- **Firmware'in yeteneklerini arayüze bakarak değil, firmware'e sorarak öğren.**
+  AMT WebUI dar bir arayüzdür ve sunduğu seçenekler donanımın yapabildiklerinin
+  tamamı değildir. `tools/amt-check.py` firmware'e `AMT_BootCapabilities` ile
+  doğrudan sorar. Bu yapılmadığı için aylarca IDER ve SOL'un olmadığı sanıldı;
+  ikisi de baştan beri varmış.
 - **Kapalı makine de ping'e cevap verir.** ME cevaplar, `ttl=255`. Çalışan Linux `ttl=64`. TTL'e
   bakmadan "ping var ama SSH yok" görüp güvenlik duvarı sanma — bu hata bir kez yapıldı ve
   gereksiz yere "fiziksel erişim gerekiyor" sonucuna varıldı. AMT portunun açık olması da
@@ -157,7 +163,11 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 ## Elenen fikirler (tekrar önerme)
 - Aynı diskte gizli bölüm: kurulum sihirbazı görür, `wipefs` ile uçar. Ayrı disk + açık `SILME-` adı daha korur.
 - ESP'ye rescue imajı: kurulum ESP'yi yeniden biçimlendirince kaybolur. Yerine USB bellek yedeği.
-- AMT ile ISO yönlendirme/KVM: ISM + KF'de yok. Uzaktan kurulum netboot ile çözülecek.
+- ~~AMT ile ISO yönlendirme/KVM: ISM + KF'de yok~~ → **BU YANLIŞTI.** 1 Eylül 2026'da
+  firmware'e `AMT_BootCapabilities` ile doğrudan soruldu: **IDER (uzaktan ISO) VAR**,
+  **SOL (seri konsol) VAR**, **ForcePXEBoot VAR**. Yalnızca **KVM yok** (iGPU olmadığı için).
+  Yanılgının kaynağı: AMT WebUI'ın dar arayüzüne bakıp hüküm verilmesi. WebUI yalnızca
+  "Normal boot" sunuyor, ama WS-MAN arayüzü hepsini sunuyor.
 - Mac'te iki tailnet aynı anda: Tailscale tek düğüm = tek tailnet. Hesap değiştirme gerekiyor.
 
 ## Riskler
