@@ -75,17 +75,16 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Kalan işler (öncelik sırasıyla)
 
-1. **`bootstrap.sh`'a SSH anahtarı adımı** — format sonrası `authorized_keys` boş kalıyor; servis geri
-   geliyor ama makineye girilemiyor. Planlanan: Pi'nin `:8080` adresinden public key listesini çekip
-   kurmak. **Henüz eklenmedi.** Bu kapanmadan 5. madde (format tatbikatı) asıl iddiayı sınamış olmaz.
-2. **Router'da IP rezervasyonu** — `60:cf:84:76:49:42` → `192.168.1.114`. LiteLLM bu IP'ye bağlı.
-3. **JIT'i kapatma** — `lms server --help` / `lms --help` içinde config alt komutu aranacak (bulunamadı).
-4. **Faz 5: Pi netboot** — dnsmasq proxy-DHCP + Debian netinstall + preseed. Menü: `local` (varsayılan,
+1. **Router'da IP rezervasyonu** — `60:cf:84:76:49:42` → `192.168.1.114`. LiteLLM bu IP'ye bağlı.
+2. **JIT'i kapatma** — `lms server --help` / `lms --help` içinde config alt komutu aranacak (bulunamadı).
+3. **Faz 5: Pi netboot** — dnsmasq proxy-DHCP + Debian netinstall + preseed. Menü: `local` (varsayılan,
    diske dokunmaz) / `rescue` (live, diske dokunmaz) / `install` (yıkıcı, bilerek seçilir).
    BIOS'ta ağ boot'u varsayılan YAPILMAYACAK; AMT'den tek seferlik PXE ile tetiklenecek.
-5. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye dokunma,
+4. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye dokunma,
    SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
    Kurulum sırasında **NVMe'yi fiziksel olarak sökmek** en güvenlisi: kurulumcu görmediği diski silemez.
+   Artık `bootstrap.sh` SSH anahtarını da geri kurduğu için bu tatbikat gerçekten
+   "uzaktan tek komut" iddiasını sınar.
 
 ### Bitenler (31 Ağu – 1 Eyl 2026)
 - ✅ `bootstrap.sh` LM Studio mimarisine göre sıfırdan yazıldı, çalışan makinede test edildi (idempotent).
@@ -93,6 +92,12 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - ✅ `KURTARMA-README.md` yeniden yazıldı; Ollama/Tailscale/docker referansları temizlendi.
 - ✅ Repo yayınlandı: https://github.com/walbis/marvinpi
 - ✅ Pi dosya sunucusu dolduruldu (internetsiz kurtarma yolu artık gerçek).
+- ✅ `bootstrap.sh`'a SSH anahtarı adımı eklendi: Pi'nin `:8080/authorized_keys` adresinden
+  public key listesini çekip kurar. Var olan anahtarlar korunur, mükerrer satır eklenmez,
+  indirilen içerik public key değilse dosyaya hiç dokunulmaz. Makinede test edildi
+  (`0 yeni / 1 toplam`, izinler `600 marvin:marvin`, `.ssh` `700`).
+- ✅ WoL doğrulandı: `Wake-on=g`, kart desteği `pumbg`. Önceki "g değil" uyarısı
+  `ethtool` çıktısını yanlış ayrıştıran bir bug'dı, düzeltildi.
 
 ## Öğrenilen tuzaklar (tekrar düşme)
 
@@ -124,5 +129,7 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - BIOS'ta "Load Optimized Defaults" → APM/Boot ayarları gider (AMT kaydı firmware'de, genelde kalır).
 - Pi tek arıza noktası (gateway + dosya sunucusu + netboot). SD kart imajını yedekle.
 - Repo public: script'lerde secret yok ama iç ağ topolojisi (MAC/IP) README'de görünüyor.
-- `bootstrap.sh` erişimi geri getirmiyor (bkz. Kalan işler 1) — format sonrası ilk komut
-  makinenin başında ya da şifreli SSH ile çalıştırılmak zorunda.
+- SSH anahtarı zinciri Pi'ye bağlı: `bootstrap.sh` anahtarları `:8080/authorized_keys`
+  adresinden çeker. Pi çökerse veya `/opt/llm-repo` boşalırsa format sonrası makineye
+  girilemez (kurulum yine tamamlanır, sadece uyarı basar). Anahtar dosyasını SD kart
+  yedeğine dahil et.

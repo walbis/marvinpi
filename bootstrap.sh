@@ -28,6 +28,9 @@ LMS_BIND="${LMS_BIND:-0.0.0.0}"
 LAN_CIDR="${LAN_CIDR:-192.168.1.0/24}"               # ufw'de serbest bırakılacak ağ
 IFACE="${IFACE:-}"                                   # boşsa varsayılan rota arayüzü
 AUTO_REBOOT="${AUTO_REBOOT:-0}"                      # 1 → sürücü sonrası kendi reboot eder
+# Format sonrası SSH erişimini geri getiren public key listesi (Pi dosya sunucusu).
+# Public key gizli bilgi değildir. Boş bırakılırsa bu adım tamamen atlanır.
+AUTH_KEYS_URL="${AUTH_KEYS_URL:-http://192.168.1.166:8080/authorized_keys}"
 
 log(){  echo -e "\n\033[1;32m==> $*\033[0m"; }
 warn(){ echo -e "\033[1;33m!!  $*\033[0m" >&2; }
@@ -302,7 +305,53 @@ else
   warn "Ethernet arayüzü bulunamadı, WoL atlandı."
 fi
 
-# ---------- 8) Özet ----------
+# ---------- 8) SSH anahtarları (format sonrası erişim) ----------
+# Taze Debian'da authorized_keys boştur. Bu adım olmadan "uzaktan tek komutla
+# geri gel" iddiası kapanmaz: servis geri döner ama makineye girilemez.
+SSH_DIR="$USER_HOME/.ssh"
+AUTH_FILE="$SSH_DIR/authorized_keys"
+KEYS_STATE="atlandı"
+
+if [[ -z "$AUTH_KEYS_URL" ]]; then
+  log "AUTH_KEYS_URL boş → SSH anahtarı adımı atlandı."
+else
+  tmpk="$(mktemp)"
+  if curl -fsSL --max-time 15 "$AUTH_KEYS_URL" -o "$tmpk" 2>/dev/null && [[ -s "$tmpk" ]]; then
+    # İndirilen şey gerçekten public key mi? Sunucu 404 sayfası döndürürse ya da
+    # indirme yarım kalırsa authorized_keys'e çöp yazılmasın diye her satır denetlenir.
+    if awk 'NF && substr($1,1,1)!="#" && $1 !~ /^(ssh-|ecdsa-|sk-ssh-|sk-ecdsa-)/ {bad=1}
+            END {exit bad?1:0}' "$tmpk"; then
+      install -d -m 700 -o "$TARGET_USER" -g "$TARGET_USER" "$SSH_DIR"
+      [[ -f "$AUTH_FILE" ]] || : > "$AUTH_FILE"
+      added=0
+      # Var olan anahtarlar KORUNUR; yalnızca eksik olanlar eklenir.
+      # Böylece script defalarca çalışsa da mükerrer satır oluşmaz.
+      while IFS= read -r k || [[ -n "$k" ]]; do
+        [[ -n "${k// /}" ]] || continue
+        case "$k" in \#*) continue ;; esac
+        if ! grep -qxF "$k" "$AUTH_FILE"; then
+          printf '%s\n' "$k" >> "$AUTH_FILE"
+          added=$((added+1))
+        fi
+      done < "$tmpk"
+      chown "$TARGET_USER:$TARGET_USER" "$AUTH_FILE"
+      chmod 600 "$AUTH_FILE"
+      total="$(grep -c . "$AUTH_FILE" 2>/dev/null || true)"
+      KEYS_STATE="${added} yeni / ${total:-0} toplam"
+      log "SSH anahtarları: $KEYS_STATE → $AUTH_FILE"
+    else
+      KEYS_STATE="geçersiz içerik, dokunulmadı"
+      warn "$AUTH_KEYS_URL geçerli SSH public key vermedi → authorized_keys'e DOKUNULMADI."
+    fi
+  else
+    KEYS_STATE="alınamadı"
+    warn "Anahtar listesi alınamadı: $AUTH_KEYS_URL"
+    warn "Erişimi elle aç: ssh-copy-id $TARGET_USER@<makine-ip>"
+  fi
+  rm -f "$tmpk"
+fi
+
+# ---------- 9) Özet ----------
 LAN_IP="$(ip -o -4 addr show "${IFACE:-}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
 [[ -n "$LAN_IP" ]] || LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
@@ -327,6 +376,7 @@ cat <<SUMMARY
  Model diski   : ${MODELS_STATE}
  Modeller      : ${MODELS_COUNT}
  lmstudio      : ${SVC_STATE}
+ SSH anahtarı  : ${KEYS_STATE}
  Endpoint      : http://${LAN_IP:-?}:${LMS_PORT}/v1
 
  Pi'den hızlı test:

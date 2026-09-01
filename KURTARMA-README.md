@@ -55,7 +55,11 @@ curl -fsSL http://192.168.1.166:8080/bootstrap.sh -o /tmp/b.sh && sudo bash /tmp
 ```
 Auth key **gerekmez** — marvin tailnet'e girmiyor. Sürücü kurulduysa reboot ister; reboot sonrası aynı komut tekrar çalıştırılır (script idempotenttir). Kesintisiz olsun istersen `sudo AUTO_REBOOT=1 bash /tmp/b.sh`.
 
-> **Bilinen açık:** `bootstrap.sh` şu an `authorized_keys` kurmuyor. Format sonrası ilk çalıştırma makinenin başında ya da şifreli SSH ile yapılmalı; anahtar sonradan `ssh-copy-id` ile eklenir.
+**SSH erişimi de geri gelir.** `bootstrap.sh` public key listesini Pi'den (`http://192.168.1.166:8080/authorized_keys`) çekip kurar; var olan anahtarları korur, mükerrer satır eklemez. Yani format sonrası ilk komut çalıştıktan sonra `ssh marvin` doğrudan çalışır.
+
+> Pi erişilemezse veya `/opt/llm-repo/authorized_keys` yoksa bu adım uyarı basıp geçer — kurulum tamamlanır ama makineye anahtarla girilemez. O durumda erişimi elle aç: `ssh-copy-id marvin@192.168.1.114`.
+>
+> Anahtar listesini güncellemek için: `scp ~/.ssh/id_ed25519.pub pi:/tmp/ak && ssh -t pi 'sudo install -m 644 /tmp/ak /opt/llm-repo/authorized_keys'`
 
 **B) Servis bozuldu, makine ayakta.**
 ```
