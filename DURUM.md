@@ -84,7 +84,12 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 3. **Faz 5: Pi netboot** — dnsmasq proxy-DHCP + Debian netinstall + preseed. Menü: `local` (varsayılan,
    diske dokunmaz) / `rescue` (live, diske dokunmaz) / `install` (yıkıcı, bilerek seçilir).
    BIOS'ta ağ boot'u varsayılan YAPILMAYACAK; AMT'den tek seferlik PXE ile tetiklenecek.
-4. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye dokunma,
+4. **BIOS'ta boot sırası `[disk → ağ]`** — fiziksel erişim gerektirir. AMT bu donanımda
+   tek seferlik PXE'yi **zorlayamıyor** (bkz. Öğrenilen tuzaklar), bu yüzden netboot'un
+   tetiklenmesinin tek yolu firmware'in ağa düşmesi. Sıra `[disk → ağ]` olduğunda normal
+   açılışlarda ağa hiç sıra gelmez; sadece disk açılamadığında devreye girer — yani tam
+   olarak kurtarmaya ihtiyaç duyulan anda.
+5. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye dokunma,
    SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
    Kurulum sırasında **NVMe'yi fiziksel olarak sökmek** en güvenlisi: kurulumcu görmediği diski silemez.
    Artık `bootstrap.sh` SSH anahtarını da geri kurduğu için bu tatbikat gerçekten
@@ -111,6 +116,14 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Öğrenilen tuzaklar (tekrar düşme)
 
+- **AMT bu donanımda tek seferlik PXE boot'u ZORLAYAMIYOR.** Remote Control sayfasındaki
+  "Select a boot option" listesinde yalnızca *Normal boot* çıkıyor; PXE/Network seçeneği
+  yok (ISM, tam AMT değil). Planın "AMT'den tek seferlik PXE ile tetiklenecek" varsayımı
+  yanlıştı ve bu ancak gerçek bir arızada, 1 Eylül'de anlaşıldı. Netboot'un tetiklenmesi
+  BIOS boot sırasının `[disk → ağ]` olmasına bağlı — bu da bir kez fiziksel erişim ister.
+- **Uzaktan görüş sıfır.** KVM yok, SOL yok, AMT yalnızca güç veriyor. Makine açık ama
+  işletim sistemi ayağa kalkmıyorsa uzaktan yapılabilecek TEK şey reset atmaktır; o da
+  tutmazsa makinenin başına gitmek zorunludur. 1 Eylül'de tam olarak bu yaşandı.
 - **Kapalı makine de ping'e cevap verir.** ME cevaplar, `ttl=255`. Çalışan Linux `ttl=64`. TTL'e
   bakmadan "ping var ama SSH yok" görüp güvenlik duvarı sanma — bu hata bir kez yapıldı ve
   gereksiz yere "fiziksel erişim gerekiyor" sonucuna varıldı. AMT portunun açık olması da
