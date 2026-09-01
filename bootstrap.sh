@@ -31,6 +31,13 @@ AUTO_REBOOT="${AUTO_REBOOT:-0}"                      # 1 → sürücü sonrası 
 # Format sonrası SSH erişimini geri getiren public key listesi (Pi dosya sunucusu).
 # Public key gizli bilgi değildir. Boş bırakılırsa bu adım tamamen atlanır.
 AUTH_KEYS_URL="${AUTH_KEYS_URL:-http://192.168.1.166:8080/authorized_keys}"
+# Açılışta sabitlenecek model. Boş bırakılırsa model sabitlenmez.
+LMS_MODEL="${LMS_MODEL:-qwen/qwen3.8-27b}"
+LMS_CTX="${LMS_CTX:-8192}"
+LMS_PARALLEL="${LMS_PARALLEL:-4}"
+# JIT: true → model ilk istekte yüklenir ve TTL dolunca düşer (gecikme tutarsız).
+# false → model açılışta yüklenir ve yüklü kalır. Sabit gecikme için false.
+LMS_JIT="${LMS_JIT:-false}"
 
 log(){  echo -e "\n\033[1;32m==> $*\033[0m"; }
 warn(){ echo -e "\033[1;33m!!  $*\033[0m" >&2; }
@@ -196,9 +203,43 @@ else
   warn "Model diski bağlı değil → symlink KURULMADI (modeller sistem diskine yazılmasın diye)."
 fi
 
-# ---------- 4) systemd: lmstudio.service ----------
+# ---------- 4) JIT ayarı ----------
+# CLI'da bu ayar yok; LM Studio'nun kendi yapılandırma dosyasında duruyor.
+# systemd adımından ÖNCE yapılır ki tek bir yeniden başlatma yetsin —
+# aksi hâlde 17 GB'lık model iki kez yüklenirdi.
+JIT_CHANGED=0
+HTTP_CFG="$USER_HOME/.lmstudio/.internal/http-server-config.json"
+if [[ -f "$HTTP_CFG" ]] && command -v jq >/dev/null 2>&1; then
+  cur_jit="$(jq -r '.justInTimeModelLoading' "$HTTP_CFG" 2>/dev/null || echo '?')"
+  if [[ "$cur_jit" != "$LMS_JIT" ]]; then
+    tmpc="$(mktemp)"
+    if jq --argjson v "$LMS_JIT" '.justInTimeModelLoading = $v' "$HTTP_CFG" > "$tmpc" 2>/dev/null && [[ -s "$tmpc" ]]; then
+      install -m 644 -o "$TARGET_USER" -g "$TARGET_USER" "$tmpc" "$HTTP_CFG"
+      log "JIT ayarı değişti: justInTimeModelLoading=$LMS_JIT"
+      JIT_CHANGED=1
+    else
+      warn "http-server-config.json güncellenemedi → dokunulmadı."
+    fi
+    rm -f "$tmpc"
+  else
+    log "JIT ayarı zaten doğru: justInTimeModelLoading=$LMS_JIT"
+  fi
+else
+  warn "http-server-config.json yok (veya jq yok) → JIT ayarı atlandı."
+  warn "Dosyayı LM Studio ilk çalıştığında oluşturur; script'i bir kez daha çalıştır."
+fi
+
+# ---------- 5) systemd: lmstudio.service ----------
 # Not: 'lms server start' arka plana çatallanır, bu yüzden Type=oneshot +
 # RemainAfterExit=yes. Sunucudan önce 'lms daemon up' şart.
+# JIT kapalıysa modeli açılışta biz yüklemeliyiz, yoksa API "model yok" der.
+# Başına '-' konur: model yüklenemezse (ör. disk yok) API sunucusu yine ayağa kalksın.
+LOAD_LINE=""
+if [[ -n "$LMS_MODEL" ]]; then
+  LOAD_LINE="ExecStartPost=-$LMS_BIN load $LMS_MODEL -y --context-length $LMS_CTX --parallel $LMS_PARALLEL
+"
+fi
+
 UNIT_CHANGED=0
 if write_if_changed /etc/systemd/system/lmstudio.service <<EOF
 [Unit]
@@ -214,7 +255,7 @@ Environment="HOME=$USER_HOME"
 Environment="LMS_SERVER_HOST=$LMS_BIND"
 ExecStartPre=$LMS_BIN daemon up
 ExecStart=$LMS_BIN server start --bind $LMS_BIND --port $LMS_PORT
-ExecStop=$LMS_BIN daemon down
+${LOAD_LINE}ExecStop=$LMS_BIN daemon down
 
 [Install]
 WantedBy=multi-user.target
@@ -223,7 +264,7 @@ then UNIT_CHANGED=1; log "lmstudio.service yazıldı."; else log "lmstudio.servi
 
 systemctl daemon-reload
 systemctl enable lmstudio >/dev/null 2>&1 || true
-if [[ "$UNIT_CHANGED" == "1" ]]; then
+if [[ "$UNIT_CHANGED" == "1" || "$JIT_CHANGED" == "1" ]]; then
   systemctl restart lmstudio || warn "lmstudio başlatılamadı: journalctl -u lmstudio -n 50"
 elif ! systemctl is-active --quiet lmstudio; then
   systemctl start lmstudio || warn "lmstudio başlatılamadı: journalctl -u lmstudio -n 50"
@@ -232,12 +273,12 @@ else
   log "lmstudio çalışıyor, yeniden başlatılmadı."
 fi
 
-# ---------- 5) Uyku kapalı, grafik arayüz kapalı ----------
+# ---------- 6) Uyku kapalı, grafik arayüz kapalı ----------
 log "Güç ayarları: uyku hedefleri mask, varsayılan hedef multi-user."
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
 systemctl set-default multi-user.target >/dev/null 2>&1 || true
 
-# ---------- 6) Güvenlik duvarı ----------
+# ---------- 7) Güvenlik duvarı ----------
 # SIRA HAYATİ: önce izin kuralları, EN SON enable/default.
 # ufw zaten etkinken 'default deny' vermek anında tüm TCP'yi düşürür ve
 # script'i çalıştıran SSH oturumunu da kesebilir; izinler o an henüz
@@ -264,7 +305,7 @@ else
   warn "Kilitlenmemek için ufw olduğu gibi bırakıldı. Elle kontrol: ufw status verbose"
 fi
 
-# ---------- 7) Wake-on-LAN (kalıcı) ----------
+# ---------- 8) Wake-on-LAN (kalıcı) ----------
 if ! command -v ethtool >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ethtool
 fi
@@ -305,7 +346,7 @@ else
   warn "Ethernet arayüzü bulunamadı, WoL atlandı."
 fi
 
-# ---------- 8) SSH anahtarları (format sonrası erişim) ----------
+# ---------- 9) SSH anahtarları (format sonrası erişim) ----------
 # Taze Debian'da authorized_keys boştur. Bu adım olmadan "uzaktan tek komutla
 # geri gel" iddiası kapanmaz: servis geri döner ama makineye girilemez.
 SSH_DIR="$USER_HOME/.ssh"
@@ -351,7 +392,7 @@ else
   rm -f "$tmpk"
 fi
 
-# ---------- 9) Özet ----------
+# ---------- 10) Özet ----------
 LAN_IP="$(ip -o -4 addr show "${IFACE:-}" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
 [[ -n "$LAN_IP" ]] || LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
