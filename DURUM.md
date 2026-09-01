@@ -116,6 +116,18 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Öğrenilen tuzaklar (tekrar düşme)
 
+- **Subnet çakışması Pi'nin subnet router'ını sessizce işlevsiz bırakıyor.** Ofis LAN'ı
+  `192.168.1.0/24`; bulunduğun ağ da aynı aralığı kullanıyorsa (ev router'larının en yaygın
+  varsayılanı) yerel rota Tailscale rotasını yener ve `192.168.1.114` ofise değil kendi ağına
+  gider. Hata mesajı yoktur, sadece "ulaşamıyorum" olur. 1 Eylül'de evden AMT'ye
+  erişilememesinin sebebi buydu.
+  **Çözüm — SSH tüneli** (çakışmayı tamamen atlar):
+  ```
+  ssh -f -N -L 16993:192.168.1.114:16993 pi
+  ```
+  sonra tarayıcıda `https://localhost:16993/`. Aynı yöntem herhangi bir LAN servisi için
+  kullanılabilir (ör. marvin'in 1234 portu: `-L 1234:192.168.1.114:1234`).
+  Kalıcı çözüm ofis LAN'ını daha ender bir aralığa taşımak olurdu (ör. `10.42.0.0/24`).
 - **AMT bu donanımda tek seferlik PXE boot'u ZORLAYAMIYOR.** Remote Control sayfasındaki
   "Select a boot option" listesinde yalnızca *Normal boot* çıkıyor; PXE/Network seçeneği
   yok (ISM, tam AMT değil). Planın "AMT'den tek seferlik PXE ile tetiklenecek" varsayımı
