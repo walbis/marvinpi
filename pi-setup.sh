@@ -122,8 +122,9 @@ cat <<SUMMARY
  Pİ HAZIR
  Sabit API endpoint : http://$PI_TS_IP:4000/v1  (tailnet'ten)
  Yetki              : Authorization: Bearer <master-key veya üretilen key>
- Dosya sunucusu     : $REPO_DIR içine bootstrap.sh + docker-compose.yml kopyala;
+ Dosya sunucusu     : $REPO_DIR içine bootstrap.sh + KURTARMA-README.md kopyala;
                       LAN'dan http://<pi-lan-ip>:8080/bootstrap.sh ile çekilir.
+                      (İnternetsiz kurtarma yolu budur — dizin boşsa çalışmaz.)
  Wake-on-LAN        : etherwake -i eth0 <MAKINE-MAC-ADRESI>
 ============================================================
 SUMMARY
