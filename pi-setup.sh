@@ -13,8 +13,12 @@ set -euo pipefail
 
 GW_DIR="/opt/llm-gw"
 REPO_DIR="/opt/llm-repo"
-# Test makinesinin MagicDNS adı. Çözülmezse 100.x.y.z Tailscale IP'sini yaz.
-OLLAMA_BASE="${OLLAMA_BASE:-http://llm-test:11434}"
+# Model sunucusu: marvin'deki LM Studio. marvin tailnet'e GİRMEZ, LAN IP'si kullanılır.
+# IP router'da rezerve edilmelidir (MAC 60:cf:84:76:49:42).
+MODEL_BASE="${MODEL_BASE:-http://192.168.1.114:1234}"
+MODEL_NAME="${MODEL_NAME:-qwen/qwen3.8-27b}"
+# GitHub'dan tazelenecek repo (dosya sunucusu içeriği)
+RAW_BASE="${RAW_BASE:-https://raw.githubusercontent.com/walbis/marvinpi/main}"
 
 log(){ echo -e "\n\033[1;32m==> $*\033[0m"; }
 [[ $EUID -eq 0 ]] || { echo "sudo ile çalıştır"; exit 1; }
@@ -47,16 +51,17 @@ fi
 if [[ ! -f litellm-config.yaml ]]; then
   cat > litellm-config.yaml <<EOF
 model_list:
-  - model_name: qwen3-14b
+  - model_name: qwen3.8-27b
     litellm_params:
-      model: ollama_chat/qwen3:14b
-      api_base: $OLLAMA_BASE
+      model: openai/$MODEL_NAME
+      api_base: $MODEL_BASE/v1
+      api_key: dummy
 
-  # Makine vLLM'e geçince üstteki bloğu yorumla, bunu aç:
-  # - model_name: qwen-14b
+  # Ekip yükü gelip vLLM ayrı portta açılırsa ikinci satır olarak eklenir:
+  # - model_name: qwen-vllm
   #   litellm_params:
   #     model: openai/Qwen/Qwen2.5-14B-Instruct-AWQ
-  #     api_base: $OLLAMA_BASE/v1
+  #     api_base: http://192.168.1.114:8000/v1
   #     api_key: dummy
 
 general_settings:
@@ -115,6 +120,73 @@ EOF
 systemctl daemon-reload
 systemctl enable --now llm-repo.service
 
+# ---------- 5) Repo dosyalarını GitHub'dan tazele (timer) ----------
+# Dosya sunucusundaki kopya elle güncellenmezse sessizce eskir: kurtarma anında
+# eski bootstrap.sh çalışır ve kimse fark etmez. Bu timer günde bir tazeler.
+# İnternet yoksa eldeki kopya korunur — offline yedek olma amacı bozulmaz.
+cat > /usr/local/bin/llm-repo-sync <<EOF
+#!/usr/bin/env bash
+# pi-setup.sh tarafından yönetilir.
+# NOT: -e YOK; bir dosya başarısız olursa diğerleri denenmeye devam etsin.
+set -uo pipefail
+RAW_BASE="\${RAW_BASE:-$RAW_BASE}"
+REPO_DIR="\${REPO_DIR:-$REPO_DIR}"
+# authorized_keys BİLEREK listede değil: repoda yok, senkron onu ezmemeli.
+FILES="bootstrap.sh KURTARMA-README.md DURUM.md"
+
+changed=0
+for f in \$FILES; do
+  tmp="\$(mktemp)"
+  if ! curl -fsSL --max-time 30 --retry 2 "\$RAW_BASE/\$f" -o "\$tmp"; then
+    echo "atlandı (indirilemedi): \$f"; rm -f "\$tmp"; continue
+  fi
+  if [ ! -s "\$tmp" ]; then
+    echo "atlandı (boş dosya): \$f"; rm -f "\$tmp"; continue
+  fi
+  # Kabuk script'i bozuk inerse kurtarmayı öldürür: önce sözdizimini doğrula.
+  case "\$f" in
+    *.sh)
+      if ! bash -n "\$tmp" 2>/dev/null; then
+        echo "atlandı (sözdizimi bozuk): \$f"; rm -f "\$tmp"; continue
+      fi ;;
+  esac
+  if [ -f "\$REPO_DIR/\$f" ] && cmp -s "\$tmp" "\$REPO_DIR/\$f"; then
+    rm -f "\$tmp"; continue
+  fi
+  # Doğrulama geçtikten SONRA yerine koy (yarım dosya asla servis edilmez).
+  install -m 644 "\$tmp" "\$REPO_DIR/\$f" && { echo "güncellendi: \$f"; changed=\$((changed+1)); }
+  rm -f "\$tmp"
+done
+echo "senkron bitti, değişen dosya: \$changed"
+EOF
+chmod 755 /usr/local/bin/llm-repo-sync
+
+cat > /etc/systemd/system/llm-repo-sync.service <<EOF
+[Unit]
+Description=LLM repo dosyalarını GitHub'dan tazele
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/llm-repo-sync
+EOF
+
+cat > /etc/systemd/system/llm-repo-sync.timer <<EOF
+[Unit]
+Description=llm-repo-sync günlük çalıştır
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now llm-repo-sync.timer
+# İlk doldurmayı hemen yap ki dizin boş kalmasın.
+/usr/local/bin/llm-repo-sync || true
+
 # ---------- Özet ----------
 cat <<SUMMARY
 
@@ -125,6 +197,8 @@ cat <<SUMMARY
  Dosya sunucusu     : $REPO_DIR içine bootstrap.sh + KURTARMA-README.md kopyala;
                       LAN'dan http://<pi-lan-ip>:8080/bootstrap.sh ile çekilir.
                       (İnternetsiz kurtarma yolu budur — dizin boşsa çalışmaz.)
+ Repo senkronu      : llm-repo-sync.timer (günlük, GitHub'dan tazeler)
+                      Elle: sudo /usr/local/bin/llm-repo-sync
  Wake-on-LAN        : etherwake -i eth0 <MAKINE-MAC-ADRESI>
 ============================================================
 SUMMARY
