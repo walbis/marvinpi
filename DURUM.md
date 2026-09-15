@@ -94,14 +94,7 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 1. **Router'da IP rezervasyonu** — `60:cf:84:76:49:42` → `192.168.1.114`. LiteLLM bu IP'ye bağlı.
 2. **JIT'i kapatma** — `lms server --help` / `lms --help` içinde config alt komutu aranacak (bulunamadı).
-3. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye
-   dokunma, SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
-   Kurulum sırasında **NVMe'yi fiziksel sökmek** en güvenlisi. Artık `bootstrap.sh` SSH
-   anahtarını da geri kurduğu için tatbikat gerçekten "uzaktan tek komut" iddiasını sınar.
-   **Artık uzaktan yapılabilir (IDER ile).** Kurulum menüsünde preseed'i beslemek için:
-   `auto=true url=http://192.168.1.166:8080/preseed.cfg` ve NVMe'yi kurulumcuya hiç
-   göstermemek için `modprobe.blacklist=nvme`. İkisi de netboot/preseed.cfg.template'de hazır.
-4. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
+3. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
    Pi'de durur ve kurtarma laptop'a bağımlı olmaz. Şu an MeshCommander yeterli ama ISO
    tarayıcının olduğu makinede olmalı.
 
@@ -115,6 +108,21 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.
 - ✅ **15 Eyl:** `bootstrap.sh`'a `fsck.repair=yes` eklendi (açılışta otomatik onarım).
 - ✅ **15 Eyl:** JIT kapatıldı + model açılışta sabitleniyor (ExecStartPost lms load).
+- ✅ **15 Eyl: FORMAT TATBİKATI TAMAMLANDI.** marvin tamamen silindi ve uzaktan
+  yeniden kuruldu; kullanıcı ofiste değilken. Kurulum preseed'den **5 dk 22 sn**
+  (1,8 TB ext4 biçimlendirme dahil, paketler internetten). 17 GB model NVMe'de
+  korundu (kurulumcuya hiç görünmedi). SSH anahtarı preseed ile geri geldi,
+  bootstrap.sh çıkış kodu 0 ile tamamlandı, Pi→marvin→27B zinciri http=200 / 0,8 sn.
+  **Tatbikatın bulduğu ve düzelttiği ALTI bug** (hepsi "yazıldı ama hiç çalıştırılmadı"):
+  1. `linux-headers` kurulmuyordu → nvidia DKMS modülü hiç derlenmiyor, GPU ölü.
+  2. Sürücü dalı kısır reboot döngüsüne giriyordu (reboot modülü derlemez).
+  3. `ls a b | head` + `pipefail` → dosyalardan biri yoksa script çıkış 2 ile ölüyordu.
+  4. `jq` taze Debian'da yok; JIT adımı sessizce atlanıyordu.
+  5. Preseed `/dev/sda`'yı hedefliyordu ama IDER'in **boş sanal disketi** o adı kapıyor
+     (gerçek disk `sdb`'ye kayıyor) → üç kurulum boşa gitti. Disk artık çalışma anında
+     bulunuyor: çıkarılabilir olmayan ve >200 GB olan ilk disk.
+  6. Model anahtarı taze kurulumda farklı (`qwen3.8-27b` vs `qwen/qwen3.8-27b`);
+     `ExecStartPost=-lms load` sessizce başarısız oluyordu. Artık `lms ls` ile tespit ediliyor.
 - ✅ **15 Eyl:** IDER KANITLANDI — marvin sanal CD'den Debian kurulum menüsüne açıldı.
   MeshCommander Pi'de servis olarak kuruldu. Uzaktan sıfırdan kurulum artık mümkün.
 - ⛔ **15 Eyl:** Netboot elendi — modem L2 izolasyonu broadcast'i kesiyor (ARP testiyle kanıtlı).
@@ -179,6 +187,31 @@ IDER kanalı yavaş olduğu için testi gereksiz uzatıyor. mini.iso gerçek kur
 (OS ayaktayken aygıt seçimi) + BIOS "Wait for F1" kapalı + `fsck.repair=yes`
 (bozuk dosya sistemi açılışta otomatik onarılır, insan beklemez).
 
+## Uzaktan sıfırdan kurulum — nasıl yapılır (15 Eyl 2026'da kanıtlandı)
+
+1. **MeshCommander**: http://100.101.117.47:3001 → `192.168.1.114`, **Digest/TLS**, `admin`
+2. **IDER** düğmesi → ISO seç → **Immediate** → oturum kurulur
+3. **Power Actions → Reset to IDE-R CDROM**
+4. Menü 10 sn sonra otomatik kuruluma girer — **tuşa basmak yok**
+5. Kurulum bitince **IDER oturumunu durdur**, makine diskten açılır
+6. `ssh marvin` (anahtar preseed ile kuruldu) → `sudo bash /tmp/bootstrap.sh`
+
+**ISO:** `marvin-v3.iso` (Pi'de `/opt/llm-repo`, ayrıca Mac'te `~/Downloads`).
+`mini.iso`'dan (64 MB) türetilmiş; parametreler `boot/grub/grub.cfg`'ye gömülü:
+`auto=true url=<pi>/preseed.cfg modprobe.blacklist=nvme log_host=<pi> console=ttyS0`.
+Yeniden üretim: `netboot/` dizinindeki dosyalar + `xorriso -indev mini.iso -outdev ... -boot_image any replay -map`.
+
+**ISO tarayıcıda okunur, Pi'de değil** — kurtarma hâlâ elinde ISO olan bir laptop ister.
+Sunucu taraflı IDER için MeshCentral gerekir (bkz. Kalan işler).
+
+**Kurulum görünürlüğü (bunlar olmadan kör kalırsın):**
+- `log_host=192.168.1.166 log_port=514` → Pi'de `marvin-syslog.service` dinler,
+  **http://192.168.1.166:8080/install.log** adresinden okunur. Asıl teşhis aracı budur.
+- Aşama bildirimi: preseed `?asama=...` ile Pi erişim log'una iz bırakır.
+- `console=ttyS0,115200n8` → AMT SOL ile canlı terminal.
+- **Uyarı:** log'u `usb 1-16 reset` satırları boğabilir (IDER sanal aygıtı);
+  okurken `grep -v "reset high-speed USB"` ile süz.
+
 ## Öğrenilen tuzaklar (tekrar düşme)
 
 - **Subnet çakışması Pi'nin subnet router'ını sessizce işlevsiz bırakıyor.** Ofis LAN'ı
@@ -198,6 +231,13 @@ IDER kanalı yavaş olduğu için testi gereksiz uzatıyor. mini.iso gerçek kur
   yok (ISM, tam AMT değil). Planın "AMT'den tek seferlik PXE ile tetiklenecek" varsayımı
   yanlıştı ve bu ancak gerçek bir arızada, 1 Eylül'de anlaşıldı. Netboot'un tetiklenmesi
   BIOS boot sırasının `[disk → ağ]` olmasına bağlı — bu da bir kez fiziksel erişim ister.
+- **Test edilmemiş her kod yolu kırıktır.** 15 Eyl format tatbikatı `bootstrap.sh`'ta
+  altı bug buldu; hepsi daha önce hiç çalışmamış dallardaydı (sürücü kurulumu, GRUB
+  tespiti, model yükleme). "Yazdım, mantığı doğru" yeterli değil — çalıştırılmamış
+  kod, ihtiyaç anında kırılır. Aynı desen netboot'ta ve `update-grub`'da da yaşandı.
+- **Görünürlüğü baştan kur, sorunu sonra çöz.** `log_host` ile uzak syslog'u kurana
+  kadar üç kurulum körlemesine denendi ve sebep bulunamadı. Kurulduktan sonra
+  IDER sanal disketi sorunu tek satırda görüldü. Görünürlük sonradan eklemek pahalı.
 - **Yetenek listesi ≠ kullanabilmek.** `AMT_BootCapabilities` PXE/IDER/SOL için "VAR"
   diyordu ve doğruydu — ama CCM hepsini kullanıcı onayı kapısının arkasına kilitliyor.
   Bir yeteneği "var" görmek yetmez; erişim politikasını (`IPS_OptInService`) da sorgula.

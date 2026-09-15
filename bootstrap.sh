@@ -68,9 +68,15 @@ LMS_BIN="$USER_HOME/.lmstudio/bin/lms"
 
 log "Hedef kullanıcı: $TARGET_USER ($USER_HOME)"
 
-if ! command -v curl >/dev/null 2>&1; then
+# Temel araclar. Taze Debian kurulumunda jq/ufw/ethtool BULUNMAZ; script
+# bunlari kullandigi icin basta kurulur (15 Eyl 2026 tatbikatinda eksiktiler).
+MISSING=()
+for c in curl jq; do command -v "$c" >/dev/null 2>&1 || MISSING+=("$c"); done
+command -v ca-certificates >/dev/null 2>&1 || true
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  log "Eksik temel araclar kuruluyor: ${MISSING[*]}"
   apt-get update -qq
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl ca-certificates
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ca-certificates "${MISSING[@]}"
 fi
 
 # ---------- 1) NVIDIA sürücüsü ----------
@@ -82,7 +88,26 @@ driver_pkg_installed(){
 if gpu_ready; then
   log "GPU hazır: $(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)"
 elif driver_pkg_installed; then
-  # Paket kurulu ama çekirdek modülü yüklenmemiş → tek eksik reboot.
+  # Paket kurulu ama nvidia-smi çalışmıyor. İKİ ayrı sebep olabilir:
+  #  a) modül derlenmiş, sadece yüklenmemiş  -> reboot çözer
+  #  b) ÇEKİRDEK BAŞLIKLARI YOK, modül hiç derlenmemiş -> reboot ÇÖZMEZ,
+  #     sonsuz "yeniden başlat" döngüsüne girer (15 Eyl 2026 tatbikatında yaşandı).
+  if [[ ! -e "/lib/modules/$(uname -r)/build" ]]; then
+    warn "Çekirdek başlıkları eksik → nvidia modülü hiç derlenmemiş. Kuruluyor..."
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(uname -r)" 2>/dev/null || \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y linux-headers-amd64
+    command -v dkms >/dev/null 2>&1 && dkms autoinstall >/dev/null 2>&1 || true
+    if [[ -e "/lib/modules/$(uname -r)/build" ]]; then
+      log "Başlıklar kuruldu, DKMS modülü derlendi."
+    else
+      die "Çekirdek başlıkları kurulamadı. Elle: apt-get install linux-headers-\$(uname -r)"
+    fi
+  fi
+  # Modül şimdi yüklenebiliyor mu? Yükleniyorsa reboot'a gerek yok.
+  if /usr/sbin/modprobe nvidia 2>/dev/null && gpu_ready; then
+    log "GPU etkinleşti (reboot gerekmedi): $(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)"
+  else
   warn "NVIDIA sürücüsü kurulu ama etkin değil. Yeniden başlatma gerekiyor."
   if [[ "$AUTO_REBOOT" == "1" ]]; then
     log "AUTO_REBOOT=1 → yeniden başlatılıyor. Açılıştan sonra bu script'i tekrar çalıştır."
@@ -90,6 +115,7 @@ elif driver_pkg_installed; then
   fi
   echo "*** Makineyi yeniden başlat, sonra bu script'i aynen tekrar çalıştır. ***"
   exit 0
+  fi
 else
   log "NVIDIA sürücüsü yok; non-free bileşenler açılıp kuruluyor..."
   # Debian 13 deb822 biçimi
@@ -107,7 +133,22 @@ else
       /etc/apt/sources.list
   fi
   apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-driver firmware-misc-nonfree
+  # ÇEKİRDEK BAŞLIKLARI ŞART: nvidia-kernel-dkms modülü derlemek için
+  # /lib/modules/$(uname -r)/build gerekir. Başlıklar yoksa paket kurulur ama
+  # modül HİÇ derlenmez ve GPU ölü kalır (15 Eyl 2026 format tatbikatında yaşandı).
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      nvidia-driver firmware-misc-nonfree \
+      "linux-headers-$(uname -r)" 2>/dev/null || \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y \
+      nvidia-driver firmware-misc-nonfree linux-headers-amd64
+  # Başlıklar sonradan geldiyse modülü şimdi derlet.
+  command -v dkms >/dev/null 2>&1 && dkms autoinstall >/dev/null 2>&1 || true
+  if [[ -e "/lib/modules/$(uname -r)/build" ]]; then
+    log "Çekirdek başlıkları yerinde, DKMS modülü derlendi."
+  else
+    warn "Çekirdek başlıkları YOK — nvidia modülü derlenemez, GPU açılmaz."
+    warn "  Elle: apt-get install linux-headers-\$(uname -r) && dkms autoinstall"
+  fi
   if [[ "$AUTO_REBOOT" == "1" ]]; then
     log "Sürücü kuruldu. AUTO_REBOOT=1 → yeniden başlatılıyor; açılışta script'i tekrar çalıştır."
     sleep 3; systemctl reboot; exit 0
@@ -234,6 +275,19 @@ fi
 # RemainAfterExit=yes. Sunucudan önce 'lms daemon up' şart.
 # JIT kapalıysa modeli açılışta biz yüklemeliyiz, yoksa API "model yok" der.
 # Başına '-' konur: model yüklenemezse (ör. disk yok) API sunucusu yine ayağa kalksın.
+# Model anahtari kurulumdan kuruluma DEGISIR (taze kurulumda "qwen3.8-27b",
+# eskisinde "qwen/qwen3.8-27b" idi). Sabit ad eslesmezse ExecStartPost sessizce
+# basarisiz olur ve model yuklenmez (15 Eyl 2026 tatbikatinda yasandi).
+# Bu yuzden once 'lms ls' ile gercek anahtari arariz; bulunamazsa ayardaki ad kullanilir.
+if [[ -n "$LMS_MODEL" ]] && [[ -x "$LMS_BIN" ]]; then
+  DETECTED="$(sudo -u "$TARGET_USER" -H "$LMS_BIN" ls 2>/dev/null \
+                | awk 'NF>=4 && $1 !~ /^(LLM|You|EMBEDDING)/ {print $1; exit}')"
+  if [[ -n "$DETECTED" ]]; then
+    [[ "$DETECTED" != "$LMS_MODEL" ]] && log "Model anahtari tespit edildi: $DETECTED (ayardaki: $LMS_MODEL)"
+    LMS_MODEL="$DETECTED"
+  fi
+fi
+
 LOAD_LINE=""
 if [[ -n "$LMS_MODEL" ]]; then
   LOAD_LINE="ExecStartPost=-$LMS_BIN load $LMS_MODEL -y --context-length $LMS_CTX --parallel $LMS_PARALLEL
@@ -286,7 +340,13 @@ systemctl set-default multi-user.target >/dev/null 2>&1 || true
 #   fsck.repair=yes  : hata bulursa SORMADAN onar (istemde asılı kalma)
 # Böylece bozuk dosya sistemi uzaktan/kendiliğinden düzelir, kilitlenmez.
 GRUB_DEF="/etc/default/grub"
-GRUB_CFG="$(ls /boot/grub/grub.cfg /boot/grub2/grub.cfg 2>/dev/null | head -1)"
+# DIKKAT: "ls a b | head" KULLANMA. Dosyalardan biri yoksa ls 2 doner,
+# pipefail yuzunden boru hatti da 2 doner ve set -e script'i OLDURUR
+# (15 Eyl 2026 tatbikatinda tam burada, cikis kodu 2 ile oldu).
+GRUB_CFG=""
+for g in /boot/grub/grub.cfg /boot/grub2/grub.cfg; do
+  [[ -f "$g" ]] && { GRUB_CFG="$g"; break; }
+done
 # Kaynak dosya (default/grub) ile DERLENMIS cikti (grub.cfg) ayri ayri kontrol edilir.
 # Ilk kosu default/grub'a yazip cikti derlemeyi atlarsa, ikinci kosu bunu yakalar.
 src_ok=0; cfg_ok=0

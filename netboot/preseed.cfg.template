@@ -11,7 +11,11 @@
 # ============================================================
 
 # ---- Yerel ayarlar (mevcut makineyle aynı) ----
-d-i debian-installer/locale string tr_TR.UTF-8
+# DIKKAT: mini.iso (netboot) TURKCE DIL DESTEGI ICERMEZ.
+# tr_TR.UTF-8 verilirse localechooser "unsupported language" deyip preseed'i
+# YOK SAYAR ve dil sorusu sorar -> otomatik kurulum orada durur (15 Eyl 2026).
+d-i debian-installer/locale string en_US.UTF-8
+d-i localechooser/supported-locales multiselect en_US.UTF-8, tr_TR.UTF-8
 d-i keyboard-configuration/xkb-keymap select tr
 d-i time/zone string Europe/Istanbul
 d-i clock-setup/utc boolean true
@@ -45,9 +49,59 @@ d-i user-setup/encrypt-home boolean false
 
 # ---- BÖLÜMLEME — YIKICI KISIM ----
 # Hedef SADECE /dev/sda. NVMe zaten çekirdek düzeyinde devre dışı.
+# DIKKAT — IDER TUZAGI (15 Eyl 2026'da uc kurulumu bosa harcatti):
+# Intel IDER iki sanal aygit sunar: "Virtual CD" (ISO) ve "Virtual Floppy" (BOS).
+# Bos disket /dev/sda adini KAPAR (0 bayt) ve gercek disk /dev/sdb'ye kayar.
+# Sabit "/dev/sda" yazmak 0 baytlik disketi hedefler -> partman koku tanimlayamaz.
+# Bu yuzden disk CALISMA ANINDA bulunur: cikarilabilir OLMAYAN ve >200 GB olan ilk disk.
 d-i partman-auto/disk string /dev/sda
+d-i partman/early_command string \
+    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=2-disk-araniyor" || true; \
+    for d in /sys/block/sd* /sys/block/nvme*; do \
+      [ -d "$d" ] || continue; \
+      n=$(basename "$d"); \
+      [ "$(cat $d/removable 2>/dev/null)" = "0" ] || continue; \
+      sz=$(cat $d/size 2>/dev/null || echo 0); \
+      [ "$sz" -gt 400000000 ] || continue; \
+      debconf-set partman-auto/disk "/dev/$n"; \
+      debconf-set grub-installer/bootdev "/dev/$n"; \
+      wget -q -O /dev/null "http://192.168.1.166:8080/?asama=2b-disk-secildi-$n-$sz" || true; \
+      break; \
+    done
 d-i partman-auto/method string regular
-d-i partman-auto/choose_recipe select atomic
+# UEFI'de 'atomic' tarifi ESP URETMEZ -> partman koku tanimlayamaz ve
+# "kok dosya sistemi tanimli degil" hatasi verir (15 Eyl 2026'da yasandi).
+# Bu yuzden acik tarif: ESP + swap + kok.
+d-i partman-auto/choose_recipe select boot-root
+# DIKKAT: $reusemethod{ } KULLANMA. "Var olan bolumu yeniden kullan" demektir;
+# disk bombosken yeniden kullanilacak ESP olmadigi icin tarif saglanamaz ve
+# "kok dosya sistemi tanimli degil" hatasi verir (15 Eyl 2026'da iki kez yasandi).
+# $primary{ } + format{ } ile SIFIRDAN olusturuyoruz.
+d-i partman-auto/expert_recipe string                              \
+      boot-root ::                                                 \
+              538 538 1075 free                                    \
+                      $iflabel{ gpt }                              \
+                      $primary{ }                                  \
+                      method{ efi }                                \
+                      format{ }                                    \
+              .                                                    \
+              4096 8192 16384 linux-swap                           \
+                      $primary{ }                                  \
+                      method{ swap }                               \
+                      format{ }                                    \
+              .                                                    \
+              10000 50000 -1 ext4                                  \
+                      $primary{ }                                  \
+                      $bootable{ }                                 \
+                      method{ format }                             \
+                      format{ }                                    \
+                      use_filesystem{ }                            \
+                      filesystem{ ext4 }                           \
+                      mountpoint{ / }                              \
+              .
+# Bolum tablosu tipi acikca GPT (UEFI icin sart)
+d-i partman-partitioning/choose_label select gpt
+d-i partman-partitioning/default_label string gpt
 d-i partman-lvm/device_remove_lvm boolean true
 d-i partman-md/device_remove_md boolean true
 d-i partman-basicfilesystems/no_swap boolean false
@@ -75,13 +129,19 @@ d-i finish-install/reboot_in_progress note
 # 2) modprobe.blacklist=nvme'yi KURULU SİSTEMDEN temizle — yoksa açılan
 #    sistem de model diskini göremez ve /mnt/models boş kalır.
 # 3) bootstrap.sh'ı /root'a koy (kurtarma komutu elde hazır olsun).
+# Aşama bildirimi — uzaktan ilerleme takibi için Pi'ye iz bırakır.
+# Pi log'unda (journalctl -u llm-repo) sırayla görünür, ekrana bakmaya gerek kalmaz.
+d-i preseed/early_command string \
+    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=1-preseed-okundu" || true
+
 d-i preseed/late_command string \
+    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=3-kurulum-bitti-son-ayarlar" || true; \
     in-target mkdir -p /home/marvin/.ssh; \
     wget -q -O /target/home/marvin/.ssh/authorized_keys http://192.168.1.166:8080/authorized_keys || true; \
     in-target chown -R marvin:marvin /home/marvin/.ssh; \
     in-target chmod 700 /home/marvin/.ssh; \
     in-target chmod 600 /home/marvin/.ssh/authorized_keys; \
     in-target sed -i 's/ *modprobe\.blacklist=nvme//g' /etc/default/grub; \
-    in-target update-grub; \
+    in-target /usr/sbin/update-grub || in-target /usr/sbin/grub-mkconfig -o /boot/grub/grub.cfg; \
     wget -q -O /target/root/bootstrap.sh http://192.168.1.166:8080/bootstrap.sh || true; \
     in-target chmod 755 /root/bootstrap.sh
