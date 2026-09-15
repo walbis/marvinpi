@@ -50,8 +50,37 @@ pw   = _parola()
 if not pw:
     sys.exit("HATA: parola bulunamadi. AMT_PASSWORD ver ya da Keychain'e kaydet:\n"
              "  security add-generic-password -a \"$USER\" -s marvin-amt -w")
+# Duz guc kontrolu: boot sirasina hic dokunmaz, sadece guc durumunu degistirir.
+# AMT PowerState: 2=Ac, 8=Kapat(yumusak), 10=Reset, 5=Guc dongusu(kapat-ac)
+POWER = {"on": ("2", "Guc ver"), "off": ("8", "Kapat"),
+         "reset": ("10", "Reset"), "cycle": ("5", "Guc dongusu")}
+if mode in POWER:
+    state, ad = POWER[mode]
+    body = f'''<r:RequestPowerStateChange_INPUT xmlns:r="{CIM}/CIM_PowerManagementService"
+   xmlns:a="{NS['a']}" xmlns:w="{NS['w']}">
+ <r:PowerState>{state}</r:PowerState>
+ <r:ManagedElement>
+  <a:Address>http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
+  <a:ReferenceParameters>
+   <w:ResourceURI>{CIM}/CIM_ComputerSystem</w:ResourceURI>
+   <w:SelectorSet><w:Selector Name="Name">ManagedSystem</w:Selector></w:SelectorSet>
+  </a:ReferenceParameters>
+ </r:ManagedElement>
+</r:RequestPowerStateChange_INPUT>'''
+    r = send(f"{CIM}/CIM_PowerManagementService/RequestPowerStateChange",
+             f"{CIM}/CIM_PowerManagementService",
+             selectors='<w:Selector Name="Name">Intel(r) AMT Power Management Service</w:Selector>',
+             body=body)
+    v = rc(r)
+    if v in ("0", "4096"):
+        print(f"{ad}: OK — komut gonderildi (boot sirasina dokunulmadi)")
+        sys.exit(0)
+    print(f"{ad}: HATA (ReturnValue={v})")
+    if "Fault" in r: show_fault(r)
+    sys.exit(1)
+
 if mode not in MODES and mode not in ("status", "bios", "enum"):
-    sys.exit(f"HATA: bilinmeyen kip '{mode}'. pxe | hdd | cd | bios | status | enum")
+    sys.exit(f"HATA: bilinmeyen kip '{mode}'. pxe | hdd | cd | bios | status | enum | on | off | reset | cycle")
 
 url = f"https://{host}:{port}/wsman"
 NS = {

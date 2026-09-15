@@ -98,10 +98,12 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
    dokunma, SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
    Kurulum sırasında **NVMe'yi fiziksel sökmek** en güvenlisi. Artık `bootstrap.sh` SSH
    anahtarını da geri kurduğu için tatbikat gerçekten "uzaktan tek komut" iddiasını sınar.
-   Not: bu makinede uzaktan kurulum yolu (netboot) yok (aşağıya bak); tatbikat temiz
-   Debian kurulmuş bir makinede başlatılır.
-4. **(Opsiyonel) Uzaktan konsol/ISO** — istenirse MeshCommander (Mac/Win) ile SOL/IDER,
-   ya da ayrı bir KVM-over-IP kutusu (Pi 4 / Zero 2 W + USB HDMI). Netboot bu ağda ölü.
+   **Artık uzaktan yapılabilir (IDER ile).** Kurulum menüsünde preseed'i beslemek için:
+   `auto=true url=http://192.168.1.166:8080/preseed.cfg` ve NVMe'yi kurulumcuya hiç
+   göstermemek için `modprobe.blacklist=nvme`. İkisi de netboot/preseed.cfg.template'de hazır.
+4. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
+   Pi'de durur ve kurtarma laptop'a bağımlı olmaz. Şu an MeshCommander yeterli ama ISO
+   tarayıcının olduğu makinede olmalı.
 
 ### İPTAL/ELENEN
 - ~~Faz 5: Pi netboot~~ → **bu ağ topolojisinde imkânsız** (modem L2 izolasyonu; aşağıya bak).
@@ -113,6 +115,8 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.
 - ✅ **15 Eyl:** `bootstrap.sh`'a `fsck.repair=yes` eklendi (açılışta otomatik onarım).
 - ✅ **15 Eyl:** JIT kapatıldı + model açılışta sabitleniyor (ExecStartPost lms load).
+- ✅ **15 Eyl:** IDER KANITLANDI — marvin sanal CD'den Debian kurulum menüsüne açıldı.
+  MeshCommander Pi'de servis olarak kuruldu. Uzaktan sıfırdan kurulum artık mümkün.
 - ⛔ **15 Eyl:** Netboot elendi — modem L2 izolasyonu broadcast'i kesiyor (ARP testiyle kanıtlı).
 - ✅ `bootstrap.sh` LM Studio mimarisine göre sıfırdan yazıldı, çalışan makinede test edildi (idempotent).
 - ✅ Reboot testi — soğuk açılışta doğrulandı.
@@ -143,11 +147,33 @@ gelmiyor → siyah ekran → diske düşüyor. Modemde "port kontrolü hepsi aç
 izolasyon firmware'de gömülü, kapatılamıyor. dnsmasq/TFTP/preseed tarafı sağlam,
 sorun tamamen ağ katmanı. `netboot/` dosyaları duruyor ama bu modemle kullanılamaz.
 
-**IDER/SOL:** Firmware destekliyor (ACM'den sonra) ama CSME 16.1 yalnızca TLS-16993
-sunuyor; apt'deki araçlar (`amtterm`/`amttool`) eski TLS'siz portları (16992/16994)
-kullandığı için bu makineyle konuşamıyor. Hazır arm64 IDER istemcisi de yok
-(MeshCmd arm64 indirmesi 404). Uzaktan konsol/ISO isteniyorsa: MeshCommander masaüstü
-(Mac/Windows, TLS-16993 destekler) ya da bir KVM-over-IP kutusu (ayrı Pi 4/Zero 2 W).
+**IDER (uzaktan sanal CD) — 15 Eyl 2026'da ÇALIŞTIĞI KANITLANDI.** marvin sanal CD'den
+Debian kurulum menüsüne açıldı. Yani makine tamamen ölse bile **uzaktan sıfırdan kurulabilir**.
+
+Kurulum: Pi'de `meshcommander.service` (npm, systemd, `--port 3001 --any`) →
+**http://100.101.117.47:3001** (tailnet'ten her yerden). Bağlantı: `192.168.1.114`,
+**Digest / TLS** (port otomatik 16993), kullanıcı `admin`.
+
+Akış: **IDER düğmesi → ISO seç → "Immediate" → oturum kurulur → Power Actions →
+"Reset to IDE-R CDROM"**. Sıra önemli; oturum kurulmadan power action verilirse makine boş
+sanal CD bulup diske düşer (zararsız).
+
+**TUZAK — `ListenerEnabled=false`:** AMT'de `EnabledState=32771` (IDER+SOL açık) görünse bile
+`ListenerEnabled` false ise IDER oturumu kurulamaz. İlk denememiz bu yüzden başarısız oldu.
+Düzeltme: `AMT_RedirectionService.RequestStateChange(32771)` (PUT şema hatası verir, gerek yok).
+
+**Oturumu durdurmadan boot rolü değişmez:** `UseIDER=true` iken `SetBootConfigRole` hata 5 döner.
+Testten sonra MeshCommander'da IDER oturumunu durdur, makine diskten açılır.
+
+**ISO nerede durur:** MeshCommander'da IDER protokolü **tarayıcıda** çalışır (`default.htm`),
+Node sunucusu yalnızca ham TLS borusu (`/webrelay.ashx` → `tls.connect`). Yani ISO, tarayıcının
+olduğu makinede olmalı — Pi'de değil. Kurtarma hâlâ "elinde ISO olan bir laptop" gerektirir.
+Bunu kaldırmak için MeshCentral (sunucu taraflı IDER) gerekir; `amt-ider-module.js` sunucu
+nesnelerine bağlı olduğu için bağımsız CLI/API yolu yok (meshcmd kaynağı repodan kaldırılmış).
+
+**Test ISO'su:** `mini.iso` (64 MB, netboot dizini) tercih edilmeli — `netinst.iso` 756 MB ve
+IDER kanalı yavaş olduğu için testi gereksiz uzatıyor. mini.iso gerçek kurulum için de yeterli
+(paketleri internetten çeker, marvin LAN'da internete çıkıyor).
 
 **Bunun yerine kanıtlanmış kurtarma zinciri:** AMT güç/reset (ACM) + `efibootmgr -n`
 (OS ayaktayken aygıt seçimi) + BIOS "Wait for F1" kapalı + `fsck.repair=yes`
