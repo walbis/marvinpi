@@ -278,6 +278,45 @@ log "Güç ayarları: uyku hedefleri mask, varsayılan hedef multi-user."
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1 || true
 systemctl set-default multi-user.target >/dev/null 2>&1 || true
 
+# ---------- 6b) Açılışta otomatik onarım (insan beklemesin) ----------
+# 1 Eylül'de makine açılamaz duruma geldi ve iki hafta öyle kaldı: BIOS "F1
+# bekle" ekranı (BIOS'ta kapatıldı) + Debian'ın bozuk dosya sistemini bulunca
+# initramfs isteminde İNSAN beklemesi. İkincisini bu adım kapatır:
+#   fsck.mode=force  : her açılışta kök diski kontrol et
+#   fsck.repair=yes  : hata bulursa SORMADAN onar (istemde asılı kalma)
+# Böylece bozuk dosya sistemi uzaktan/kendiliğinden düzelir, kilitlenmez.
+GRUB_DEF="/etc/default/grub"
+GRUB_CFG="$(ls /boot/grub/grub.cfg /boot/grub2/grub.cfg 2>/dev/null | head -1)"
+# Kaynak dosya (default/grub) ile DERLENMIS cikti (grub.cfg) ayri ayri kontrol edilir.
+# Ilk kosu default/grub'a yazip cikti derlemeyi atlarsa, ikinci kosu bunu yakalar.
+src_ok=0; cfg_ok=0
+grep -q "fsck.repair=yes" "$GRUB_DEF" 2>/dev/null && src_ok=1
+[[ -n "$GRUB_CFG" ]] && grep -q "fsck.repair=yes" "$GRUB_CFG" 2>/dev/null && cfg_ok=1
+if [[ -f "$GRUB_DEF" && ( "$src_ok" == "0" || "$cfg_ok" == "0" ) ]]; then
+  if [[ "$src_ok" == "0" ]]; then
+    cur="$(sed -n 's/^GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"$/\1/p' "$GRUB_DEF")"
+    new="$(printf '%s fsck.mode=force fsck.repair=yes' "$cur" | sed 's/^ *//')"
+    sed -i "s|^GRUB_CMDLINE_LINUX_DEFAULT=.*|GRUB_CMDLINE_LINUX_DEFAULT=\"$new\"|" "$GRUB_DEF"
+  fi
+  # update-grub/grub-mkconfig /usr/sbin'de; sudo bash altında PATH'te olmayabilir,
+  # bu yüzden mutlak yollarla ara. Derleme sonucu DOĞRULANIR — sessiz başarısızlık yok.
+  grubmk=""
+  for c in /usr/sbin/update-grub /sbin/update-grub update-grub; do command -v "$c" >/dev/null 2>&1 && { grubmk="$c"; break; }; done
+  if [[ -n "$grubmk" ]]; then
+    "$grubmk" >/dev/null 2>&1
+  else
+    for c in /usr/sbin/grub-mkconfig /sbin/grub-mkconfig grub-mkconfig; do command -v "$c" >/dev/null 2>&1 && { "$c" -o /boot/grub/grub.cfg >/dev/null 2>&1; grubmk="$c"; break; }; done
+  fi
+  if grep -q "fsck.repair=yes" /boot/grub/grub.cfg 2>/dev/null; then
+    log "Açılışta otomatik fsck onarımı etkin (fsck.mode=force fsck.repair=yes), grub.cfg doğrulandı."
+  else
+    warn "GRUB güncellendi ama grub.cfg'de fsck.repair GÖRÜNMÜYOR."
+    warn "  update-grub bulundu mu: ${grubmk:-HAYIR}. Elle: sudo /usr/sbin/update-grub"
+  fi
+else
+  log "fsck otomatik onarımı zaten etkin (grub.cfg doğrulandı)."
+fi
+
 # ---------- 7) Güvenlik duvarı ----------
 # SIRA HAYATİ: önce izin kuralları, EN SON enable/default.
 # ufw zaten etkinken 'default deny' vermek anında tüm TCP'yi düşürür ve

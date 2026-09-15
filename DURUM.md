@@ -1,6 +1,6 @@
 # DURUM — LLM Test Makinesi Projesi
 
-**Son güncelleme: 1 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
+**Son güncelleme: 15 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
 
 ## Amaç
 Ofiste, başkaları tarafından her an formatlanabilen bir test makinesinde LLM servisi çalıştırmak.
@@ -42,22 +42,19 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 1. **AMT (Intel Standard Manageability, CSME 16.1)** — makine kapalıyken uzaktan aç/kapat/reset.
    - Adres: **`https://192.168.1.114:16993`** · kullanıcı `admin`
    - **16992 ASLA açılmaz** — CSME 16.1 TLS'siz portları (16992/16994/623) kaldırdı. Hep 16993.
-   - Kip: **CCM**, `rpc activate -local -ccm` ile aktive edildi (MEBx aktivasyonu tutmamıştı).
+   - Kip: **ACM** (15 Eyl 2026'da MEBx'ten; önceden CCM'deydi, aşağıya bak).
    - Teşhis: `sudo rpc amtinfo` (araç `/usr/local/bin/rpc`, rpc-go). `rpc activate/configure`
      komutları LMS olmadığı için 20 sn timeout + tekrar döngüsüne girer, **yavaş ama tamamlar**.
-   - Bu BIOS'ta Serial Console Redirection **yok** + KF'de iGPU yok → BIOS ekranı uzaktan görülemez.
-   - **⚠ CCM KİLİDİ — uzaktan kurtarmanın önündeki asıl engel budur.**
-     AMT `rpc activate -local -ccm` ile **Client Control Mode**'da aktive edilmiş.
-     Ölçüm (1 Eyl 2026): `OptInRequired=4294967295` (tüm yönlendirmeler için
-     kullanıcı onayı şart), `CanModifyOptInPolicy=0` (politika uzaktan değişmez).
-     Sonuç: boot yönlendirme / IDER / SOL çağrıları `AccessDenied` döner, çünkü
-     makinenin **ekranında** beliren onay kodunun girilmesi gerekir. KVM olmadığı
-     için o kod okunamaz. Uzaktan yapılabilen tek şey **güç kontrolü** (aç/kapat/
-     reset) — onay istemeyen tek işlem sınıfı odur.
-     **Çözüm: ACM (Admin Control Mode) ile yeniden aktive etmek.** ACM'de
-     `OptInRequired=0` yapılabilir ve PXE/IDER/SOL uzaktan kullanılabilir hâle gelir.
-     ACM ya MEBx üzerinden yerel kurulumla ya da provisioning sertifikasıyla olur;
-     ikisi de **bir kez fiziksel erişim** ister.
+   - KVM yok (iGPU yok). SOL/IDER firmware'de VAR ama TLS-16993 istemcisi gerektirir (aşağıya bak).
+   - **AMT artık ACM'de (15 Eyl 2026'da düzeltildi).** Önceden CCM'deydi ve tüm
+     yönlendirme çağrıları (PXE/IDER/SOL) `AccessDenied` dönüyordu. Çözüm: MEBx'ten
+     `Standard Manageability → Activate Network Access` + `User Consent → None`.
+     Ölçüm: `OptInRequired=0`, `CanModifyOptInPolicy=1`, `ChangeBootOrder OK`.
+     **Kritik incelik:** MEBx değişiklikleri sıcak reboot'la OTURMAZ — ME yarım
+     kalır (UUID sıfırlanır, Remote Control kaybolur, boot sınıfları boşalır).
+     Tam **G3 (fişten çek, 60 sn)** gerekir; ondan sonra UUID döner, her şey oturur.
+     `tools/amt-check.py` ve `tools/amt-boot.py` (enum/status/pxe/hdd/bios,
+     AMT_NORESET, Keychain parola) bu işi uzaktan yapar.
    - **Firmware yetenekleri (1 Eyl 2026'da ölçüldü, `tools/amt-check.py`):**
      ForcePXEBoot ✅ · ForceHardDriveBoot ✅ · ForceCDorDVDBoot ✅ · IDER ✅ · SOL ✅ ·
      BIOSSetup ✅ · BIOSPause ❌ · KVM ❌ (iGPU yok).
@@ -97,21 +94,26 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 1. **Router'da IP rezervasyonu** — `60:cf:84:76:49:42` → `192.168.1.114`. LiteLLM bu IP'ye bağlı.
 2. **JIT'i kapatma** — `lms server --help` / `lms --help` içinde config alt komutu aranacak (bulunamadı).
-3. **Faz 5: Pi netboot** — dnsmasq proxy-DHCP + Debian netinstall + preseed. Menü: `local` (varsayılan,
-   diske dokunmaz) / `rescue` (live, diske dokunmaz) / `install` (yıkıcı, bilerek seçilir).
-   BIOS'ta ağ boot'u varsayılan YAPILMAYACAK; AMT'den tek seferlik PXE ile tetiklenecek.
-4. **BIOS'ta boot sırası `[disk → ağ]`** — fiziksel erişim gerektirir. AMT bu donanımda
-   tek seferlik PXE'yi **zorlayamıyor** (bkz. Öğrenilen tuzaklar), bu yüzden netboot'un
-   tetiklenmesinin tek yolu firmware'in ağa düşmesi. Sıra `[disk → ağ]` olduğunda normal
-   açılışlarda ağa hiç sıra gelmez; sadece disk açılamadığında devreye girer — yani tam
-   olarak kurtarmaya ihtiyaç duyulan anda.
-5. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye dokunma,
-   SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
-   Kurulum sırasında **NVMe'yi fiziksel olarak sökmek** en güvenlisi: kurulumcu görmediği diski silemez.
-   Artık `bootstrap.sh` SSH anahtarını da geri kurduğu için bu tatbikat gerçekten
-   "uzaktan tek komut" iddiasını sınar.
+3. **Faz 4: format tatbikatı** — sistemin sınavı. Temiz Debian (disk `sda`, NVMe'ye
+   dokunma, SSH server seçili) → tek komut bootstrap → Pi'den curl → cevap gelmeli.
+   Kurulum sırasında **NVMe'yi fiziksel sökmek** en güvenlisi. Artık `bootstrap.sh` SSH
+   anahtarını da geri kurduğu için tatbikat gerçekten "uzaktan tek komut" iddiasını sınar.
+   Not: bu makinede uzaktan kurulum yolu (netboot) yok (aşağıya bak); tatbikat temiz
+   Debian kurulmuş bir makinede başlatılır.
+4. **(Opsiyonel) Uzaktan konsol/ISO** — istenirse MeshCommander (Mac/Win) ile SOL/IDER,
+   ya da ayrı bir KVM-over-IP kutusu (Pi 4 / Zero 2 W + USB HDMI). Netboot bu ağda ölü.
 
-### Bitenler (31 Ağu – 1 Eyl 2026)
+### İPTAL/ELENEN
+- ~~Faz 5: Pi netboot~~ → **bu ağ topolojisinde imkânsız** (modem L2 izolasyonu; aşağıya bak).
+  `netboot/` dosyaları duruyor ama başka bir switch/segment olmadan kullanılamaz.
+
+### Bitenler### Bitenler (31 Ağu – 15 Eyl 2026)
+- ✅ **15 Eyl:** AMT ACM'e alındı (MEBx + G3 reset) → uzaktan güç/reset/boot-order çalışıyor.
+- ✅ **15 Eyl:** IP rezervasyonu yapıldı (modem, `60:cf:84:76:49:42` → `.114`).
+- ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.
+- ✅ **15 Eyl:** `bootstrap.sh`'a `fsck.repair=yes` eklendi (açılışta otomatik onarım).
+- ✅ **15 Eyl:** JIT kapatıldı + model açılışta sabitleniyor (ExecStartPost lms load).
+- ⛔ **15 Eyl:** Netboot elendi — modem L2 izolasyonu broadcast'i kesiyor (ARP testiyle kanıtlı).
 - ✅ `bootstrap.sh` LM Studio mimarisine göre sıfırdan yazıldı, çalışan makinede test edildi (idempotent).
 - ✅ Reboot testi — soğuk açılışta doğrulandı.
 - ✅ `KURTARMA-README.md` yeniden yazıldı; Ollama/Tailscale/docker referansları temizlendi.
@@ -129,6 +131,27 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   kurulsa gateway var olmayan endpoint'e bakardı. Artık `MODEL_BASE`/`MODEL_NAME`.
 - ✅ WoL doğrulandı: `Wake-on=g`, kart desteği `pumbg`. Önceki "g değil" uyarısı
   `ethtool` çıktısını yanlış ayrıştıran bir bug'dı, düzeltildi.
+
+## Netboot (Faz 5) — bu ağda ÖLÜ, IDER/SOL istemcisi de yok
+
+**15 Eyl 2026 bulgusu:** Netboot bu topolojide kesinlikle çalışmıyor. ZTE modem
+(H3600P) kablolu portları **L2 seviyesinde ayırıyor**: marvin'in ARP/DHCP broadcast'i
+Pi'ye hiç ulaşmıyor (ARP testiyle kanıtlandı — marvin `.166`/`.200` için ARP yayınladı,
+Pi 0 paket gördü). PXE başlıyor ("Start PXE over IPv4" ekranda görülüyor) ama Discover
+yalnızca modeme gidiyor, Pi'deki dnsmasq proxy'ye ulaşmadığı için açılış dosyası
+gelmiyor → siyah ekran → diske düşüyor. Modemde "port kontrolü hepsi açık" olsa da
+izolasyon firmware'de gömülü, kapatılamıyor. dnsmasq/TFTP/preseed tarafı sağlam,
+sorun tamamen ağ katmanı. `netboot/` dosyaları duruyor ama bu modemle kullanılamaz.
+
+**IDER/SOL:** Firmware destekliyor (ACM'den sonra) ama CSME 16.1 yalnızca TLS-16993
+sunuyor; apt'deki araçlar (`amtterm`/`amttool`) eski TLS'siz portları (16992/16994)
+kullandığı için bu makineyle konuşamıyor. Hazır arm64 IDER istemcisi de yok
+(MeshCmd arm64 indirmesi 404). Uzaktan konsol/ISO isteniyorsa: MeshCommander masaüstü
+(Mac/Windows, TLS-16993 destekler) ya da bir KVM-over-IP kutusu (ayrı Pi 4/Zero 2 W).
+
+**Bunun yerine kanıtlanmış kurtarma zinciri:** AMT güç/reset (ACM) + `efibootmgr -n`
+(OS ayaktayken aygıt seçimi) + BIOS "Wait for F1" kapalı + `fsck.repair=yes`
+(bozuk dosya sistemi açılışta otomatik onarılır, insan beklemez).
 
 ## Öğrenilen tuzaklar (tekrar düşme)
 
@@ -161,6 +184,13 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   tamamı değildir. `tools/amt-check.py` firmware'e `AMT_BootCapabilities` ile
   doğrudan sorar. Bu yapılmadığı için aylarca IDER ve SOL'un olmadığı sanıldı;
   ikisi de baştan beri varmış.
+- **1 Eylül'deki iki haftalık "açılmıyor" krizinin sebebi donanım değil, BIOS'tu.**
+  Journalctl'e göre makine düzgün çalışıyordu; 10:15-10:17'de üç kez elle yeniden
+  başlatıldı, sonuncusu sert kesildi. Ardından ASUS'un **"Wait for F1 If Error"**
+  ekranında takıldı (anormal güç olayı sonrası tuş bekler) ve AMT reset'leri hep
+  aynı yere döndü. Ekran görülene kadar (15 Eyl) teşhis edilemedi. Ders: **açılmayan
+  makinede ilk iş ekrana bakmaktır**; SSH/ping/AMT hepsi "ölü" gösterir ama gerçek
+  sebep tek satırlık bir firmware istemi olabilir. BIOS'ta "Wait for F1" artık kapalı.
 - **Kapalı makine de ping'e cevap verir.** ME cevaplar, `ttl=255`. Çalışan Linux `ttl=64`. TTL'e
   bakmadan "ping var ama SSH yok" görüp güvenlik duvarı sanma — bu hata bir kez yapıldı ve
   gereksiz yere "fiziksel erişim gerekiyor" sonucuna varıldı. AMT portunun açık olması da
