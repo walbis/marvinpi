@@ -1,0 +1,16 @@
+[Unit]
+Description=MeshCentral - AMT yonetimi (sunucu tarafli IDER)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/meshcentral
+ExecStart=/usr/bin/node /opt/meshcentral/node_modules/meshcentral/meshcentral.js
+Restart=always
+RestartSec=10
+# Pi'de kaynak sinirini asmasin
+MemoryMax=3G
+
+[Install]
+WantedBy=multi-user.target

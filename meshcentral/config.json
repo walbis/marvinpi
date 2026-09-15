@@ -1,0 +1,29 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Ylianst/MeshCentral/master/meshcentral-config-schema.json",
+  "settings": {
+    "cert": "llm-pi",
+    "port": 4430,
+    "redirPort": 8081,
+    "LANonly": true,
+    "SelfUpdate": false,
+    "AllowFraming": false,
+    "AgentPong": 300,
+    "NoAgentUpdate": 1,
+    "MinifyWeb": false
+  },
+  "domains": {
+    "": {
+      "title": "marvin",
+      "title2": "uzaktan yonetim",
+      "newAccounts": true,
+      "certUrl": null,
+      "allowedorigin": [
+        "100.101.117.47",
+        "llm-pi",
+        "192.168.1.166",
+        "localhost",
+        "127.0.0.1"
+      ]
+    }
+  }
+}
