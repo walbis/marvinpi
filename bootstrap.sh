@@ -304,10 +304,17 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+Restart=on-failure
+RestartSec=15
 User=$TARGET_USER
 Environment="HOME=$USER_HOME"
 Environment="LMS_SERVER_HOST=$LMS_BIND"
 ExecStartPre=$LMS_BIN daemon up
+# 'daemon up' llmster'i baslatir ve lms ikilisini yazma icin acik tutar.
+# Hemen ardindan ayni dosya calistirilirsa cekirdek ETXTBSY verir:
+# "Text file busy", status=203/EXEC ve servis DUSER (15 Eyl 2026, taze
+# kurulumun ilk soguk acilisinda yasandi). Kisa bekleme yarisi cozer.
+ExecStartPre=/bin/sleep 5
 ExecStart=$LMS_BIN server start --bind $LMS_BIND --port $LMS_PORT
 ${LOAD_LINE}ExecStop=$LMS_BIN daemon down
 
