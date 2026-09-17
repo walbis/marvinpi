@@ -1,6 +1,6 @@
 # DURUM — LLM Test Makinesi Projesi
 
-**Son güncelleme: 15 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
+**Son güncelleme: 17 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
 
 ## Amaç
 Ofiste, başkaları tarafından her an formatlanabilen bir test makinesinde LLM servisi çalıştırmak.
@@ -73,10 +73,20 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
    Elle tetikleme: `sudo /usr/local/bin/llm-repo-sync`
 4. **LM Studio marvin'de** — `~/.lmstudio/bin/lms`, port **1234**, `--bind 0.0.0.0`.
    - Model dizini: `~/.lmstudio/models` → **symlink** → `/mnt/models/lmstudio` (17 GB, 2 adet .gguf)
-   - Yüklü model: `qwen/qwen3.8-27b` (Q4_K_M) + `text-embedding-nomic-embed-text-v1.5`
+   - Diskteki modeller: `qwen/qwen3.8-27b` (Q4_K_M) + `text-embedding-nomic-embed-text-v1.5`
    - systemd: `lmstudio.service` — `Type=oneshot` + `RemainAfterExit=yes`,
      `ExecStartPre=lms daemon up`, `ExecStop=lms daemon down`, `Environment=LMS_SERVER_HOST=0.0.0.0`.
      **`daemon up` şart**; sunucu onsuz ayağa kalkmaz.
+   - **17 Eyl 2026 kararı: model açılışta YÜKLENMEZ** (`LMS_MODEL` varsayılanı boş, JIT kapalı).
+     Sebep: makine GPU eğitim işleri için de kullanılacak; 17 GB model VRAM'de oturamaz.
+     Yükleme istek üzerine: `lms-model load <anahtar>` / `unload` / `status`; açılışa
+     sabitlemek isteyen `sudo lms-model pin <anahtar>` (systemd drop-in, bootstrap ezmez).
+     Model yüklü değilken LiteLLM üzerinden gelen istek hata döner — bilinçli.
+     15 Eyl'deki "JIT kapalı + model sabitleme" kararının sabitleme yarısı geri alındı.
+6. **Eğitim ortamı (bootstrap adım 10, 17 Eyl 2026 — HENÜZ MAKİNEDE KOŞMADI)** —
+   `/opt/egitim-venv` (torch cu124, unsloth, peft, trl, bitsandbytes…), `/opt/llama.cpp`
+   (`v0.4.1`, CPU, GGUF çevirme/niceleme), `HF_HOME=/mnt/models/hf`, NVMe önbelleği
+   `/mnt/models/cache` (ikinci kurulum internetsiz ~2 dk). Tatbikat: `egitim/TATBIKAT.md`.
 5. **Güvenlik duvarı** — ufw etkin, `192.168.1.0/24` için 22 ve 1234 açık.
 6. **Uyku kapatıldı** — `sleep/suspend/hibernate/hybrid-sleep` mask, varsayılan hedef `multi-user.target`.
 7. **Wake-on-LAN** — `wol.service` (ethtool ile `wol g`), 1 Eylül'de bootstrap tarafından kuruldu.
@@ -92,8 +102,13 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Kalan işler (öncelik sırasıyla)
 
-1. **Router'da IP rezervasyonu** — `60:cf:84:76:49:42` → `192.168.1.114`. LiteLLM bu IP'ye bağlı.
-2. **JIT'i kapatma** — `lms server --help` / `lms --help` içinde config alt komutu aranacak (bulunamadı).
+1. **Eğitim ortamı tatbikatı** — bootstrap adım 10 taze kurulumda hiç koşmadı. Plan ve
+   rapor şablonu: `egitim/TATBIKAT.md`. Çıktıları: `egitim/requirements.txt` (dondurulmuş
+   pin'ler, depoya girecek), Python yolu (3.13 mü uv-3.12 mi → REHBER §7), süreler
+   (düz / önbellekli / ikinci koşum). Pi'de `llm-repo-sync` de yenilenmeli (FILES listesi
+   değişti: REHBER.md + egitim/requirements.txt eklendi) — `sudo bash pi-setup.sh` ya da
+   `/usr/local/bin/llm-repo-sync`'i elle güncelle.
+2. ~~Router'da IP rezervasyonu~~ → 15 Eyl'de yapıldı. ~~JIT'i kapatma~~ → 15 Eyl'de yapıldı.
 3. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
    Pi'de durur ve kurtarma laptop'a bağımlı olmaz. Şu an MeshCommander yeterli ama ISO
    tarayıcının olduğu makinede olmalı.
@@ -102,7 +117,9 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 - ~~Faz 5: Pi netboot~~ → **bu ağ topolojisinde imkânsız** (modem L2 izolasyonu; aşağıya bak).
   `netboot/` dosyaları duruyor ama başka bir switch/segment olmadan kullanılamaz.
 
-### Bitenler### Bitenler (31 Ağu – 15 Eyl 2026)
+### Bitenler (31 Ağu – 17 Eyl 2026)
+- 🧪 **17 Eyl:** bootstrap adım 10 (eğitim ortamı + NVMe önbellek + `lms-model`) yazıldı;
+  yerelde `bash -n`/shellcheck temiz; **makinede test edilmedi**, tatbikat bekliyor.
 - ✅ **15 Eyl:** AMT ACM'e alındı (MEBx + G3 reset) → uzaktan güç/reset/boot-order çalışıyor.
 - ✅ **15 Eyl:** IP rezervasyonu yapıldı (modem, `60:cf:84:76:49:42` → `.114`).
 - ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.
@@ -194,7 +211,7 @@ IDER kanalı yavaş olduğu için testi gereksiz uzatıyor. mini.iso gerçek kur
 3. **Power Actions → Reset to IDE-R CDROM**
 4. Menü 10 sn sonra otomatik kuruluma girer — **tuşa basmak yok**
 5. Kurulum bitince **IDER oturumunu durdur**, makine diskten açılır
-6. `ssh marvin` (anahtar preseed ile kuruldu) → `sudo bash /tmp/bootstrap.sh`
+6. `ssh marvin` (anahtar preseed ile kuruldu) → `sudo bash /root/bootstrap.sh` (preseed oraya koyar; /tmp DEĞİL)
 
 **ISO:** `marvin-v3.iso` (Pi'de `/opt/llm-repo`, ayrıca Mac'te `~/Downloads`).
 `mini.iso`'dan (64 MB) türetilmiş; parametreler `boot/grub/grub.cfg`'ye gömülü:
