@@ -20,8 +20,9 @@ ls -la /opt/llm-repo/ /opt/llm-repo/egitim/ 2>/dev/null
 Beklenen: `bootstrap.sh` yeni (içinde `lms-model` geçer: `grep -c lms-model /opt/llm-repo/bootstrap.sh` > 0).
 `egitim/requirements.txt` ilk tatbikatta **henüz yok** — normal (404 → bootstrap gevşek listeyle kurar).
 
-> Dikkat: senkron hâlâ `RAW_BASE` (pi-setup.sh:21) adresinden çeker. Bu PR Gitea'daysa ve
-> GitHub güncel değilse Pi eski dosyayı alır. Önce kanonik repo kararı (REVIEW-CONTEXT.md).
+> Kanonik repo **GitHub** (`walbis/marvinpi`, 17 Eyl 2026 kararı); Pi senkronu oradan çeker
+> (`RAW_BASE`, pi-setup.sh:21). Gitea (`karay/marvinpi`) kopyadır — Pi'ye düşmesi gereken
+> her değişiklik GitHub `main`'e girmeli.
 
 ## 1. Koşu A — çalışan makinede, önbellek boş (internetten)
 
