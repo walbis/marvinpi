@@ -125,6 +125,7 @@ ssh marvin 'sudo bash /root/bootstrap.sh' 2>&1 | tee /tmp/bootstrap-C.log   # /r
 | 10 | preseed (Koşu C, 15 Eyl'den beri) | hostname `192`: d-i ters DNS'ten IP'yi alıp ilk noktada kesiyor; `netcfg/hostname=marvin` kazanmıyor | `late_command` → `/target/etc/hostname` + `/etc/hosts` (PR #2) |
 | 11 | işletme (Koşu C tur 4) | SIDER kesilmeden reboot → sanal CD'den açılıp **kurulum baştan başladı**, biten kurulumu sildi. 10 sn'lik otomatik menü bunu kaçınılmaz kılıyor | `asama=3` işareti `…-SIDER-IDER-SIMDI-KES` oldu; REHBER §6'ya büyük harfle. Kalıcı çözüm: `marvin-yeniden-kur` (IDER'siz yol) |
 | 12 | işletme | Her kurulumda SSH host anahtarı değişir → `ssh marvin` "REMOTE HOST IDENTIFICATION HAS CHANGED" ile durur | `ssh-keygen -R 192.168.1.114` — REHBER §6 adımlarına eklendi |
+| 14 | preseed + bootstrap (Koşu C sonrası kontrol) | Taze kurulumda `PasswordAuthentication yes`; `99-nopw.conf` eski makineye elle konmuştu. Parolasız sudo (bug 9 düzeltmesi) ile birleşince LAN'da parola tahmini = root | preseed `late_command` + bootstrap adım 9b aynı dosyayı yazar (PR #3); canlıda 18 Eyl'de kapatıldı |
 | 13 | bootstrap adım 1 | "DKMS modülü derlendi" yalnız başlık dizinine bakıyordu; modül adı `nvidia-current` olduğu için `modinfo nvidia` da boş dönüyor | `nvidia_module_built()`: `.ko` dosyası ya da `dkms status … installed` (PR #2) |
 
 ## 5. Tatbikat sonrası depoya işlenecekler

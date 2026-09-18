@@ -463,6 +463,7 @@ Betik kaç kez çalıştırılırsa çalıştırılsın aynı sonucu verir ve **
 | 7 | Güvenlik duvarı | ufw: ofis ağına 22 ve 1234 açık, gerisi kapalı |
 | 8 | Wake-on-LAN | Ağ kartını uyandırmaya hazır bırakır (kalıcı servis) |
 | 9 | SSH anahtarları | Pi'den public key listesini çekip kurar — **erişim böyle geri gelir** |
+| 9b | SSH parola girişi kapalı | `sshd_config.d/99-nopw.conf` — parolasız sudo ile parolayla SSH birleşmesin (anahtar yoksa atlanır) |
 | 10 | Eğitim ortamı | GPU deney/eğitim katmanı: `/opt/egitim-venv`, `/opt/llama.cpp`, HF önbelleği, `lms-model` — **NVMe önbellekli** (aşağıda) |
 | 11 | Özet | Ne yapıldığını, neyin çalıştığını ve eğitim kabul kontrollerini basar |
 

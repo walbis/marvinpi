@@ -142,6 +142,10 @@ d-i finish-install/reboot_in_progress note
 #    yalnız anahtarla olduğu için risk artmıyor.
 # 5) hostname 'marvin': d-i ters DNS'ten IP'yi alıp ilk noktaya kadar kesiyor ("192"),
 #    netcfg/hostname kazanmıyor (15 ve 18 Eyl'de iki kez görüldü). Dosyaya doğrudan yaz.
+# 6) SSH PAROLA GİRİŞİ KAPALI (sshd_config.d/99-nopw.conf): parolasız sudo (4) ile
+#    parolayla SSH birleşirse LAN'da parolayı tahmin eden herkes root olur. Eski makinede
+#    elle konmuştu, preseed üretmiyordu (18 Eyl 2026 tatbikatı #2). bootstrap adım 9 da
+#    aynı dosyayı yazar (iki katman).
 # 1) SSH anahtarını Pi'den al: ilk açılışta 'ssh marvin' çalışsın.
 # 2) modprobe.blacklist=nvme'yi KURULU SİSTEMDEN temizle — yoksa açılan
 #    sistem de model diskini göremez ve /mnt/models boş kalır.
@@ -165,4 +169,5 @@ d-i preseed/late_command string \
     echo "marvin ALL=(ALL) NOPASSWD: ALL" > /target/etc/sudoers.d/marvin; \
     in-target chmod 440 /etc/sudoers.d/marvin; \
     echo marvin > /target/etc/hostname; \
-    in-target sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmarvin/' /etc/hosts
+    in-target sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmarvin/' /etc/hosts; \
+    printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' > /target/etc/ssh/sshd_config.d/99-nopw.conf

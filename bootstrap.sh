@@ -544,6 +544,28 @@ else
   rm -f "$tmpk"
 fi
 
+# 9b) SSH parola girişi KAPALI. sudo parolasız (preseed) olduğu için parolayla SSH açık
+# kalırsa LAN'da parolayı tahmin eden herkes root olur. Preseed de aynı dosyayı yazar;
+# elle kurulan Debian'da (USB ile format) yalnız bu adım tutar. Anahtar yoksa kilitlenme
+# olmasın diye: authorized_keys'te en az bir anahtar varsa uygulanır.
+if [[ -s "$AUTH_FILE" ]] && grep -qE '^(ssh-|ecdsa-|sk-)' "$AUTH_FILE"; then
+  if write_if_changed /etc/ssh/sshd_config.d/99-nopw.conf <<'EOF'
+# bootstrap.sh tarafından yönetilir — elle düzenleme. Giriş yalnız SSH anahtarıyla.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+EOF
+  then
+    if sshd -t 2>/dev/null; then systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+      log "SSH parola girişi kapatıldı (sshd_config.d/99-nopw.conf)."
+    else
+      rm -f /etc/ssh/sshd_config.d/99-nopw.conf; warn "sshd -t başarısız → 99-nopw.conf geri alındı."
+    fi
+  fi
+else
+  warn "authorized_keys'te anahtar yok → SSH parola girişi KAPATILMADI (kilitlenmemek için)."
+fi
+
 # ---------- 10) Eğitim ortamı (GPU deney/eğitim katmanı) ----------
 # Makine kısa süreli GPU işleri (LoRA/QLoRA, değerlendirme, GGUF çevirme/niceleme)
 # için de kullanılıyor ve her kullanımdan sonra sıfırdan kuruluyor. Projeden
