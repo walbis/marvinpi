@@ -377,7 +377,7 @@ Sürücü kurulduktan sonra "yeniden başlat" der: `ssh marvin 'sudo systemctl r
 
 ### Ne kadar sürer
 
-15 Eylül 2026: **5 dakika 22 saniye** (preseed'den; MeshCommander, ofiste). 18 Eylül 2026 (SIDER, ofis dışından): reset → reboot **26 dk** — IDER'den açılış ~6 dk, `disk-detect` 2 dk, biçimlendirme ~6 dk, udev zaman aşımı 2 dk (SIDER erken kesilirse düşer), paketler internetten. Sonra bootstrap: sürücü 196 s + reboot + kalan her şey **158 s** (eğitim ortamı önbellekten 66 s) — toplam ~7 dk. Yani sıfırdan tam makine: **~35 dk, insan müdahalesi iki tık** (SIDER bağla/kes).
+15 Eylül 2026: **5 dakika 22 saniye** (preseed'den; MeshCommander, ofiste). 18 Eylül 2026 (SIDER, ofis dışından): reset → reboot **26 dk** — IDER'den açılış ~6 dk, `disk-detect` 2 dk, biçimlendirme ~6 dk, udev zaman aşımı 2 dk (SIDER erken kesilirse düşer), paketler internetten. Sonra bootstrap: sürücü 196 s + reboot + kalan her şey **158 s** (eğitim ortamı önbellekten 66 s) — toplam ~7 dk. Koşu D (aynı gün, her şey preseed'den, `AUTO_REBOOT=1`): reset → hazır makine **~25 dk, insan müdahalesi 3 tık** (SIDER bağla / Reset / `asama=3`'te kes).
 
 ### Hangi ISO
 
@@ -804,7 +804,6 @@ Repo: **github.com/walbis/marvinpi** — 17 commit, 31 Ağustos – 15 Eylül 20
 | Ne | Durum |
 | --- | --- |
 | **`marvin-yeniden-kur` (ISO'suz, OS ayaktayken)** | Henüz yazılmadı — planlı, bkz. §6 |
-| **preseed `late_command` sudo/hostname satırları** | 18 Eyl'de eklendi, Pi'deki preseed yeniden üretildi; **bir sonraki kurulumda** doğrulanacak (bu turda elle yapıldı) |
 
 > Yukarıdaki "test edilmemiş her kod yolu kırıktır" dersi burada da geçerli: bu yol denenmeden **çalışıyor sayılmamalı.**
 

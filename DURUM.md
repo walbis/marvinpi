@@ -114,8 +114,6 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 1. **`marvin-yeniden-kur`** — OS ayaktayken ISO'suz/IDER'siz sıfırdan kurulum: kurulumcu
    çekirdeği + initrd diske, tek seferlik GRUB girişi, aynı preseed; Pi'den tek komut. Ayrı PR.
    Kural: SSH varsa script, yoksa SIDER (REHBER §6).
-2. **Preseed `late_command` sudo/hostname satırları bir sonraki kurulumda doğrulanacak** —
-   18 Eyl'de eklendi (Pi'deki preseed şablondan yeniden üretildi) ama o turda elle yapıldı.
 3. **Preseed render'ı senkrona bağlanmalı** — Pi'deki `preseed.cfg` şablon + parola karmasından
    üretiliyor; bugün elle üretildi. `llm-repo-sync`'e render adımı eklenirse şablon depoda
    değişince Pi kendiliğinden tazelenir (dünkü inceleme bulgusu; bugün bedeli ödendi).
@@ -129,6 +127,9 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   `netboot/` dosyaları duruyor ama başka bir switch/segment olmadan kullanılamaz.
 
 ### Bitenler (31 Ağu – 17 Eyl 2026)
+- ✅ **18 Eyl: FORMAT TATBİKATI #3 (Koşu D) — tam otomatik.** Reset → hazır makine ~25 dk,
+  insan müdahalesi 3 tık (SIDER bağla / Reset / `asama=3`'te kes). Preseed sudo, hostname,
+  sshd sertleştirmesini kendisi yaptı; bootstrap `AUTO_REBOOT=1` ile tek seferde; yeni bug yok.
 - ✅ **18 Eyl: FORMAT TATBİKATI #2 (Koşu C) — SIDER ile, ofis dışından.** 4 kurulum turu
   (2'si `ahci` yüzünden sessiz takıldı, 1'i SIDER kesilmediği için kaza), sonunda taze sistem +
   bootstrap 7 dk. **13 bug** bulundu/düzeltildi (`egitim/TATBIKAT.md` §4) — en önemlileri:
