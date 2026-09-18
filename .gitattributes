@@ -1,0 +1,2 @@
+# Hedef Linux: her dosya LF ile checkout edilir (Windows istemcide CRLF script Pi/marvin'de kirilir).
+* text=auto eol=lf

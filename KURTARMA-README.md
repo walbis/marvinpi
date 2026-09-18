@@ -66,7 +66,7 @@ Auth key **gerekmez** — marvin tailnet'e girmiyor. Sürücü kurulduysa reboot
 ssh marvin
 sudo systemctl restart lmstudio
 ```
-Yetmezse `sudo bash /tmp/bootstrap.sh` — idempotenttir, her şeyi onarır ve çalışan servise gereksiz dokunmaz.
+Yetmezse `sudo bash /root/bootstrap.sh` (taze kurulumda preseed oraya koyar) — idempotenttir, her şeyi onarır ve çalışan servise gereksiz dokunmaz.
 Teşhis: `systemctl status lmstudio` · `journalctl -u lmstudio -n 50`
 
 **C) Makine kapalı veya donmuş.**

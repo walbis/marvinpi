@@ -225,11 +225,22 @@ Teşhis: cevapta `finish_reason: "length"` ve dolu bir `reasoning_tokens` alanı
 
 LM Studio seçilmiş olmasının sebebi tam olarak bu: REST API'si model **yükleme / boşaltma / indirme** uçları içeriyor, yani çalışma anında model değiştirilebiliyor. (vLLM'de model konteyner başlarken sabitlenir; Ollama'da API yüzeyi daha dardır.)
 
+**17 Eylül 2026'dan beri model açılışta YÜKLENMEZ.** Sebep: makine artık GPU eğitim işleri için de kullanılıyor (bkz. 7. bootstrap.sh, adım 10) ve 17 GB'lık sohbet modeli VRAM'de otururken eğitim başlayamaz. Model yükleme kararı insanın: `lms-model` komutu (bootstrap kurar).
+
 ```bash
-ssh marvin '~/.lmstudio/bin/lms ls'
+ssh marvin 'lms-model ls'                      # diskteki modeller
+ssh marvin 'lms-model load qwen3.8-27b'        # yükle (anahtarın son bileşeni yeter)
+ssh marvin 'lms-model status'                  # ne yüklü, açılışa sabitli mi
+ssh marvin 'lms-model unload'                  # VRAM'i eğitime bırak
 ```
 
-Açılışta hangi modelin yükleneceği `lmstudio.service` içinde sabitlenmiştir; kalıcı değişiklik için `bootstrap.sh`'taki `LMS_MODEL` değerini de güncelle — aksi halde bir sonraki kurtarmada eski modele döner.
+Model yüklü değilken Pi üzerinden gelen istekler hata döner — bu bilinçli. Eskisi gibi açılışta da yüklensin istersen:
+
+```bash
+ssh marvin 'sudo lms-model pin qwen3.8-27b'    # kaldırmak: sudo lms-model unpin
+```
+
+`pin`, ana servis dosyasına dokunmadan bir systemd *drop-in* yazar; `bootstrap.sh` tekrar koşsa bile sabitleme kalır. JIT (ilk istekte otomatik yükleme) bilerek **kapalı**: açık olsaydı eğitim sırasında Pi'den gelen sıradan bir istek modeli VRAM'e çekip eğitim işini öldürürdü.
 
 ## 5. Uzaktan güç kontrolü — makineyi aç, kapat, sıfırla
 
@@ -345,7 +356,7 @@ Bu, makineye USB takmakla aynı şey — sadece uzaktan.
 **7.** Makine diskten açılır. Sonra:
 
 ```bash
-ssh marvin 'sudo bash /tmp/bootstrap.sh'
+ssh marvin 'sudo bash /root/bootstrap.sh'
 ```
 
 > **Sıra önemli:** önce IDER oturumu, sonra güç komutu. Ters yaparsan makine boş bir sanal CD bulur ve diske düşer — zararsız ama zaman kaybı.
@@ -429,14 +440,46 @@ Betik kaç kez çalıştırılırsa çalıştırılsın aynı sonucu verir ve **
 | 1 | NVIDIA sürücüsü | `non-free` deposunu açar, **çekirdek başlıklarını** ve sürücüyü kurar |
 | 2 | Model diski | `SILME-MODELLER` etiketini bulur, `/mnt/models`'a bağlar, `fstab`'a `nofail` ile yazar |
 | 3 | LM Studio | Hedef kullanıcıya kurar, PATH'i ayarlar, model dizini symlink'ini kurar |
-| 4 | JIT ayarı | Modelin açılışta yüklenip yüklü kalmasını sağlar |
-| 5 | systemd servisi | `lmstudio.service` — açılışta otomatik başlar |
+| 4 | JIT ayarı | JIT'i kapalı tutar: model yalnızca açıkça istendiğinde yüklenir |
+| 5 | systemd servisi | `lmstudio.service` — açılışta otomatik başlar; **model yüklemez** (`lms-model` ile) |
 | 6 | Uyku kapalı | Uyku/hazarda-geçiş maskelenir, hedef `multi-user.target` |
 | 6b | Açılışta onarım | GRUB'a `fsck.repair=yes` ekler — bozuk dosya sistemi insan beklemeden onarılır |
 | 7 | Güvenlik duvarı | ufw: ofis ağına 22 ve 1234 açık, gerisi kapalı |
 | 8 | Wake-on-LAN | Ağ kartını uyandırmaya hazır bırakır (kalıcı servis) |
 | 9 | SSH anahtarları | Pi'den public key listesini çekip kurar — **erişim böyle geri gelir** |
-| 10 | Özet | Ne yapıldığını, neyin çalıştığını basar |
+| 10 | Eğitim ortamı | GPU deney/eğitim katmanı: `/opt/egitim-venv`, `/opt/llama.cpp`, HF önbelleği, `lms-model` — **NVMe önbellekli** (aşağıda) |
+| 11 | Özet | Ne yapıldığını, neyin çalıştığını ve eğitim kabul kontrollerini basar |
+
+### Adım 10 — Eğitim ortamı (17 Eylül 2026'da eklendi)
+
+marvin bundan sonra farklı projelerin **kısa süreli GPU işleri** için de kullanılıyor: ince ayar (LoRA/QLoRA), değerlendirme, GGUF'a çevirme ve niceleme. Kural: her kullanımdan sonra sıfırdan kurulur, iz bırakılmaz. Bu yüzden projeden bağımsız, herkese açık yazılım katmanı taze kurulumda hazır gelir; **proje verisi, kod ve anahtarlar oturumla gelip gider** — bootstrap'ın işi değildir. Ayrıntı: `egitim/README.md`.
+
+Ne kurar:
+
+| Parça | Nerede | Not |
+| --- | --- | --- |
+| Sistem paketleri | apt | git, tmux, cmake, build-essential, python3-venv… CUDA toolkit **kurulmaz** (pip tekerlekleri kendi çalışma zamanını taşır) |
+| Python ortamı | `/opt/egitim-venv` (sahibi `marvin`) | torch **yalnız cu124** (sürücü 550 → CUDA 12.4 tavanı → torch ≤ 2.6), unsloth, peft, trl, transformers, datasets, accelerate, bitsandbytes, gguf, hf_transfer… |
+| llama.cpp | `/opt/llama.cpp` (sabit etiket `v0.4.1`, yalnız CPU) | `convert_hf_to_gguf.py` + `llama-quantize`. Deposunun kendi `requirements-*.txt` dosyası **kurulmaz** — içindeki CPU torch pini CUDA torch'u ezer |
+| HF önbelleği | `/mnt/models/hf` | Yalnız kamuya açık taban modeller. Giriş kabuğunda `HF_HOME` **disk bağlıysa** ayarlanır; değilse uyarı basar ve ayarlanmaz (sda'ya inmesin) |
+| `lms-model` | `/usr/local/bin` | LM Studio modelini istek üzerine yükle/boşalt/sabitle |
+
+**Neden hızlı — NVMe önbellek.** İndirilen her şey (`.deb`, pip wheel, llama.cpp derlemesi, uv Python) model diskindeki `/mnt/models/cache/` altında tutulur. Disk formatı sağ atlattığı için ikinci kurulum internete çıkmadan biter: 65 Mbit ofis hattında ~12 dakikalık indirme → ~2 dakika. Disk bağlı değilse önbellek yok sayılır, her şey internetten gelir; sda'ya önbellek yazılmaz.
+
+**Paket pin'leri.** İlk başarılı kurulum `pip freeze` ile `/opt/egitim-venv/requirements.txt` üretir; bu dosya depoya `egitim/requirements.txt` olarak konur, Pi'ye senkronlanır ve sonraki kurulumlar **ondan** kurar (kaynak sırası: Pi → önbellek → yoksa gevşek liste + dondurma). Projeler kendi pin listesini getirirse oturum içinde venv'in üstüne kurar; bootstrap değişmez.
+
+**Python yolu — uv ile 3.12 (tatbikat sonucu, 18 Eyl 2026).** Sistem Python'u 3.13 ama bu kümeyle **kurulamıyor**: unsloth'un istediği ve torch 2.6 ile uyumlu son xformers (0.0.29.post3) için cp313 tekerleği yok; pip kaynaktan derlemeye kalkıp düşüyor. Bu yüzden bootstrap `uv` ile Python 3.12 kurar (ikili `/mnt/models/cache/uv/python` altında, formatı sağ atlatır) ve venv'i onunla yapar. Ayrıca `torchao<0.17` kısıtı var: unsloth_zoo torchao ister, 0.17+ torch 2.7 API'si kullanıyor (marvin'de ampirik: 0.13–0.16 çalışıyor). Sürücü/torch yükselince `EGITIM_PYTHON=system` yeniden denenir. Seçilen yol `/opt/egitim-venv/.python-yolu` dosyasında ve özet ekranında yazar.
+
+**Kabul ölçütleri** (bootstrap sonunda kendisi koşar; `egitim/TATBIKAT.md` ile aynı):
+
+```bash
+su - marvin -c '/opt/egitim-venv/bin/python -c "import torch, unsloth, bitsandbytes; print(torch.cuda.is_available(), torch.version.cuda)"'   # True 12.4
+/opt/llama.cpp/build/bin/llama-quantize --help
+su - marvin -c '/opt/egitim-venv/bin/python /opt/llama.cpp/convert_hf_to_gguf.py --help'
+su - marvin -c 'echo $HF_HOME'                                                # /mnt/models/hf
+```
+
+Atlamak için: `sudo EGITIM=0 bash bootstrap.sh`.
 
 ### Değiştirilebilir ayarlar
 
@@ -448,12 +491,18 @@ Hepsi ortam değişkeniyle ezilebilir, betik düzenlenmeden:
 | `MODELS_LABEL` | `SILME-MODELLER` | Aranacak disk etiketi |
 | `MOUNT_POINT` | `/mnt/models` | Model diskinin bağlanacağı yer |
 | `LMS_PORT` | `1234` | LLM API portu |
-| `LMS_MODEL` | `qwen/qwen3.8-27b` | Açılışta sabitlenecek model |
-| `LMS_CTX` | `8192` | Bağlam penceresi |
+| `LMS_MODEL` | *(boş)* | Açılışta sabitlenecek model. **Boş = yüklenmez** (17 Eyl 2026). Eski davranış: `qwen/qwen3.8-27b` ya da `lms-model pin` |
+| `LMS_CTX` | `8192` | Bağlam penceresi (`lms-model load --ctx` ile oturumda değişir) |
 | `LMS_PARALLEL` | `4` | Eşzamanlı istek sayısı |
 | `LAN_CIDR` | `192.168.1.0/24` | Güvenlik duvarında serbest bırakılan ağ |
 | `AUTO_REBOOT` | `0` | `1` → sürücü sonrası kendi yeniden başlatır |
 | `AUTH_KEYS_URL` | Pi'nin `:8080/authorized_keys` | SSH anahtar listesi kaynağı |
+| `EGITIM` | `1` | `0` → eğitim ortamı adımı atlanır |
+| `EGITIM_PYTHON` | `uv312` | `system` (3.13 — bugün xformers yüzünden kurulamıyor) / `auto` (önce sistem, olmazsa uv) |
+| `LLAMA_TAG` | `v0.4.1` | llama.cpp sürüm etiketi (asla `latest`) |
+| `TORCH_INDEX` | `…/whl/cu124` | torch tekerlek dizini — sürücü 550 tavanı |
+| `CACHE_DIR` | `/mnt/models/cache` | NVMe önbelleği; disk bağlı değilse kullanılmaz |
+| `REQ_URL` | Pi'nin `:8080/egitim/requirements.txt` | Pinli paket listesi kaynağı |
 
 ### SSH anahtarı adımı — erişim nasıl geri geliyor
 
@@ -738,6 +787,7 @@ Repo: **github.com/walbis/marvinpi** — 17 commit, 31 Ağustos – 15 Eylül 20
 | Ne | Durum |
 | --- | --- |
 | **MeshCentral'ın sunucu taraflı IDER'i** | Pi'ye kuruldu ve yapılandırıldı, ama **gerçek bir oturumla hiç denenmedi.** Çalışırsa ISO Pi'de durur ve kurtarma laptop'a bağımlı olmaktan çıkar. Çalışmazsa MeshCommander zaten yeterli — kayıp yok |
+| **bootstrap adım 10 — eğitim ortamı, taze kurulumda** | Çalışan makinede 18 Eyl 2026'da doğrulandı (kurulum 190 s, ikinci koşum 23 s, tüm kabul ölçütleri). **Format sonrası (Koşu C) henüz koşmadı** — `egitim/TATBIKAT.md` §3 |
 
 > Yukarıdaki "test edilmemiş her kod yolu kırıktır" dersi burada da geçerli: bu yol denenmeden **çalışıyor sayılmamalı.**
 

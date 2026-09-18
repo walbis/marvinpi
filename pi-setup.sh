@@ -132,7 +132,9 @@ set -uo pipefail
 RAW_BASE="\${RAW_BASE:-$RAW_BASE}"
 REPO_DIR="\${REPO_DIR:-$REPO_DIR}"
 # authorized_keys BİLEREK listede değil: repoda yok, senkron onu ezmemeli.
-FILES="bootstrap.sh KURTARMA-README.md DURUM.md"
+# egitim/requirements.txt: bootstrap'ın eğitim adımı pinli paket listesini buradan
+# (http://<pi>:8080/egitim/requirements.txt) çeker; yoksa NVMe önbelleğine düşer.
+FILES="bootstrap.sh KURTARMA-README.md DURUM.md REHBER.md egitim/requirements.txt"
 
 changed=0
 for f in \$FILES; do
@@ -140,6 +142,7 @@ for f in \$FILES; do
   if ! curl -fsSL --max-time 30 --retry 2 "\$RAW_BASE/\$f" -o "\$tmp"; then
     echo "atlandı (indirilemedi): \$f"; rm -f "\$tmp"; continue
   fi
+  mkdir -p "\$REPO_DIR/\$(dirname "\$f")"
   if [ ! -s "\$tmp" ]; then
     echo "atlandı (boş dosya): \$f"; rm -f "\$tmp"; continue
   fi
