@@ -1,6 +1,6 @@
 # DURUM — LLM Test Makinesi Projesi
 
-**Son güncelleme: 17 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
+**Son güncelleme: 18 Eylül 2026.** Bu dosya projenin devir notudur. Yeni bir oturuma başlarken önce bunu oku.
 
 ## Amaç
 Ofiste, başkaları tarafından her an formatlanabilen bir test makinesinde LLM servisi çalıştırmak.
@@ -83,10 +83,13 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
      sabitlemek isteyen `sudo lms-model pin <anahtar>` (systemd drop-in, bootstrap ezmez).
      Model yüklü değilken LiteLLM üzerinden gelen istek hata döner — bilinçli.
      15 Eyl'deki "JIT kapalı + model sabitleme" kararının sabitleme yarısı geri alındı.
-6. **Eğitim ortamı (bootstrap adım 10, 17 Eyl 2026 — HENÜZ MAKİNEDE KOŞMADI)** —
-   `/opt/egitim-venv` (torch cu124, unsloth, peft, trl, bitsandbytes…), `/opt/llama.cpp`
-   (`v0.4.1`, CPU, GGUF çevirme/niceleme), `HF_HOME=/mnt/models/hf`, NVMe önbelleği
-   `/mnt/models/cache` (ikinci kurulum internetsiz ~2 dk). Tatbikat: `egitim/TATBIKAT.md`.
+6. **Eğitim ortamı (bootstrap adım 10) — çalışan makinede test edildi ✅ (18 Eyl 2026)** —
+   `/opt/egitim-venv` (**uv + Python 3.12**; torch 2.6.0+cu124, unsloth 2026.9.6, transformers 5.5,
+   trl 0.24, peft 0.21, bitsandbytes 0.50, torchao 0.16), `/opt/llama.cpp` (`v0.4.1`, CPU, GGUF
+   çevirme/niceleme), `HF_HOME=/mnt/models/hf`, NVMe önbelleği `/mnt/models/cache` (3.1 GB wheel).
+   Ölçüm: önbellekten tam kurulum **190 s**, ikinci koşum **23 s**, sıfır indirme. Pinler
+   `egitim/requirements.txt`. **Format tatbikatı (Koşu C) henüz yapılmadı** — `egitim/TATBIKAT.md`.
+   Sistem Python 3.13 bu kümeyle KURULAMIYOR (xformers cp313 tekerleği yok) — uv-3.12 kalıcı karar.
 5. **Güvenlik duvarı** — ufw etkin, `192.168.1.0/24` için 22 ve 1234 açık.
 6. **Uyku kapatıldı** — `sleep/suspend/hibernate/hybrid-sleep` mask, varsayılan hedef `multi-user.target`.
 7. **Wake-on-LAN** — `wol.service` (ethtool ile `wol g`), 1 Eylül'de bootstrap tarafından kuruldu.
@@ -102,12 +105,14 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Kalan işler (öncelik sırasıyla)
 
-1. **Eğitim ortamı tatbikatı** — bootstrap adım 10 taze kurulumda hiç koşmadı. Plan ve
-   rapor şablonu: `egitim/TATBIKAT.md`. Çıktıları: `egitim/requirements.txt` (dondurulmuş
-   pin'ler, depoya girecek), Python yolu (3.13 mü uv-3.12 mi → REHBER §7), süreler
-   (düz / önbellekli / ikinci koşum). Pi'de `llm-repo-sync` de yenilenmeli (FILES listesi
-   değişti: REHBER.md + egitim/requirements.txt eklendi) — `sudo bash pi-setup.sh` ya da
-   `/usr/local/bin/llm-repo-sync`'i elle güncelle.
+1. **Eğitim ortamı — Koşu C (format tatbikatı)** — A/B çalışan makinede geçti (18 Eyl);
+   taze kurulumda henüz koşmadı. Sıra: PR birleşir → Pi'de `llm-repo-sync` yenilenir (FILES
+   listesi değişti: `sudo bash pi-setup.sh`) → IDER ile sıfırdan kurulum → `sudo bash
+   /root/bootstrap.sh` → `egitim/TATBIKAT.md` §3 tablosu. Beklenti: bootstrap < 5 dk (önbellekli).
+1b. **hostname `192`** — 15 Eyl kurulumundan beri makine adı `marvin` değil `192`
+   (`/etc/hosts`: `127.0.1.1 192.local 192`; d-i ters DNS'ten IP'yi almış, preseed
+   `netcfg/hostname` kazanmamış). Canlıda `sudo hostnamectl set-hostname marvin` + `/etc/hosts`;
+   kalıcı düzeltme preseed `late_command`'a `echo marvin > /target/etc/hostname`.
 2. ~~Router'da IP rezervasyonu~~ → 15 Eyl'de yapıldı. ~~JIT'i kapatma~~ → 15 Eyl'de yapıldı.
 3. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
    Pi'de durur ve kurtarma laptop'a bağımlı olmaz. Şu an MeshCommander yeterli ama ISO
@@ -118,8 +123,11 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   `netboot/` dosyaları duruyor ama başka bir switch/segment olmadan kullanılamaz.
 
 ### Bitenler (31 Ağu – 17 Eyl 2026)
-- 🧪 **17 Eyl:** bootstrap adım 10 (eğitim ortamı + NVMe önbellek + `lms-model`) yazıldı;
-  yerelde `bash -n`/shellcheck temiz; **makinede test edilmedi**, tatbikat bekliyor.
+- ✅ **18 Eyl:** bootstrap adım 10 (eğitim ortamı + NVMe önbellek + `lms-model`) çalışan
+  makinede üç turda oturdu; 7 bug bulundu ve düzeltildi (`egitim/TATBIKAT.md` §4): /root'a
+  yazılan pin dosyası, `grep -q`+pipefail SIGPIPE, Python 3.13'te xformers, torchao≥0.17,
+  doğrulamadan önce dondurma, banner ayrıştırma. Model açılışta yüklenmiyor; `lms-model`
+  load/unload/pin/unpin doğrulandı. Format tatbikatı (Koşu C) bekliyor.
 - ✅ **15 Eyl:** AMT ACM'e alındı (MEBx + G3 reset) → uzaktan güç/reset/boot-order çalışıyor.
 - ✅ **15 Eyl:** IP rezervasyonu yapıldı (modem, `60:cf:84:76:49:42` → `.114`).
 - ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.

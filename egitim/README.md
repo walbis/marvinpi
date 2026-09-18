@@ -50,11 +50,11 @@ LM Studio ile aynı anda çalışacaksan önce `lms-model unload` (VRAM'i boşal
 
 ## Paket pin'leri nasıl yönetilir
 
-- `egitim/requirements.txt` **dondurulmuş** listedir; elle yazılmaz. İlk başarılı kurulum `/root/egitim-requirements.txt` üretir → depoya bu ad altında konur → Pi senkronu (`llm-repo-sync`) dağıtır → sonraki kurulumlar buradan kurar.
+- `egitim/requirements.txt` **dondurulmuş** listedir; elle yazılmaz. İlk başarılı kurulum `/opt/egitim-venv/requirements.txt` üretir → depoya bu ad altında konur → Pi senkronu (`llm-repo-sync`) dağıtır → sonraki kurulumlar buradan kurar.
 - Sürüm yükseltmek: `egitim/requirements.txt`'i sil (ya da `REQ_URL=` boş ver), bootstrap'ı çalışan makinede koştur, yeni dondurulmuş dosyayı depoya koy. Değişiklik commit'i = sürüm kararı.
-- torch tavanı **cu124 / 2.6** sürücü 550'den geliyor. Daha yeni torch için önce sürücü (trixie'de resmi olarak yok) — bu bir mimari karar, requirements düzenleyerek aşılmaz.
+- torch tavanı **cu124 / 2.6** sürücü 550'den geliyor. Daha yeni torch için önce sürücü (trixie'de resmi olarak yok) — bu bir mimari karar, requirements düzenleyerek aşılmaz. Tavanın iki sonucu: Python **3.12** (xformers cp313 tekerleği yok) ve `torchao<0.17` (0.17+ torch 2.7 ister).
 - llama.cpp'nin kendi `requirements/requirements-convert_hf_to_gguf.txt` dosyasını **asla** venv'e kurma: içindeki `torch==2.11.0` (CPU dizini) CUDA torch'u sessizce ezer.
 
 ## Değiştirilebilir ayarlar
 
-`EGITIM=0` (adımı atla) · `EGITIM_PYTHON=system|uv312` · `LLAMA_TAG` · `TORCH_INDEX` · `CACHE_DIR` · `REQ_URL` — tam liste REHBER.md §7.
+`EGITIM=0` (adımı atla) · `EGITIM_PYTHON=uv312|system|auto` · `LLAMA_TAG` · `TORCH_INDEX` · `CACHE_DIR` · `REQ_URL` — tam liste REHBER.md §7.

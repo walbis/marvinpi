@@ -50,7 +50,10 @@ LMS_JIT="${LMS_JIT:-false}"
 # ---- Eğitim ortamı (adım 10) ----
 EGITIM="${EGITIM:-1}"                                # 0 → adım tamamen atlanır
 EGITIM_VENV="${EGITIM_VENV:-/opt/egitim-venv}"
-EGITIM_PYTHON="${EGITIM_PYTHON:-auto}"               # auto | system | uv312
+# uv312 | system | auto. VARSAYILAN uv312: sistem Python'u 3.13 ama torch 2.6 (cu124
+# tavanı) ile uyumlu son xformers'ın (0.0.29.post3) cp313 tekerleği YOK; pip kaynaktan
+# derlemeye kalkıp düşüyor (18 Eyl 2026 tatbikatı). Sürücü/torch yükselince 'system' denenir.
+EGITIM_PYTHON="${EGITIM_PYTHON:-uv312}"
 LLAMA_DIR="${LLAMA_DIR:-/opt/llama.cpp}"
 LLAMA_TAG="${LLAMA_TAG:-v0.4.1}"                     # sabit etiket; 'latest' DEĞİL (17 Eyl 2026'da son sürüm)
 TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu124}"   # sürücü 550 → CUDA 12.4 tavanı
@@ -641,10 +644,13 @@ PY
   fi
 
   # Pinli liste: Pi → önbellek → yok (gevşek kurulum + dondurma)
+  # DİKKAT: pip $TARGET_USER olarak koşar; pin/kısıt dosyaları /root'ta OLAMAZ
+  # (700 → Permission denied; 18 Eyl 2026 tatbikatında yaşandı). venv içinde tutulur.
+  EGITIM_REQ="$EGITIM_VENV/requirements.txt"; EGITIM_CON="$EGITIM_VENV/constraints.txt"
   REQ_FILE=""; REQ_SRC="yok"
   tmpr="$(mktemp)"
   if [[ -n "$REQ_URL" ]] && curl -fsSL --max-time 20 "$REQ_URL" -o "$tmpr" 2>/dev/null && grep -q '^torch==' "$tmpr"; then
-    REQ_FILE="/root/egitim-requirements.txt"; install -m 644 "$tmpr" "$REQ_FILE"; REQ_SRC="Pi ($REQ_URL)"
+    REQ_FILE="$EGITIM_REQ"; install -m 644 -o "$TARGET_USER" -g "$TARGET_USER" "$tmpr" "$REQ_FILE"; REQ_SRC="Pi ($REQ_URL)"
     [[ "$CACHE_OK" == "1" ]] && install -m 644 "$tmpr" "$CACHE_DIR/egitim/requirements.txt"
   elif [[ "$CACHE_OK" == "1" && -s "$CACHE_DIR/egitim/requirements.txt" ]]; then
     REQ_FILE="$CACHE_DIR/egitim/requirements.txt"; REQ_SRC="önbellek"
@@ -657,9 +663,14 @@ PY
   if [[ "$(cat "$STAMP" 2>/dev/null)" == "$WANT" ]] && venv_verify; then
     log "Python paketleri güncel (stamp eşleşti, import doğrulandı) — atlandı."
   else
-    # Gevşek liste — YALNIZ pinli dosya yokken. Kurulum sonunda dondurulur ve
-    # egitim/requirements.txt olarak depoya konması istenir.
+    # Gevşek liste — YALNIZ pinli dosya yokken. Doğrulama GEÇİNCE dondurulur ve
+    # egitim/requirements.txt olarak depoya konması istenir. (Doğrulamadan önce
+    # dondurulursa bozuk küme önbelleğe pin olarak yazılır — 18 Eyl 2026'da yaşandı.)
     GEVSEK="unsloth peft trl transformers datasets accelerate bitsandbytes sentencepiece protobuf gguf hf_transfer numpy httpx openai pytest"
+    # torch 2.6 ile yaşayabilen üst sınırlar (18 Eyl 2026'da marvin'de ampirik: torchao
+    # 0.13-0.16 import OK, 0.17+ torch 2.7 API'si ister). torch yükselince gevşetilir.
+    KISITLAR="torchao<0.17"
+    GEVSEK_MODU=0; [[ -z "$REQ_FILE" ]] && GEVSEK_MODU=1
     kur_paketler(){
       if [[ -n "$REQ_FILE" ]]; then
         log "Pinli kurulum ($REQ_SRC) — günlük: $ELOG"
@@ -682,27 +693,31 @@ PY
         pip_u install "${fl[@]}" --index-url "$TORCH_INDEX" torch || return 1
         TORCH_VER="$(run_u "$VENV_PY" -c 'import torch;print(torch.__version__)')"
         # 2) gerisi, torch sürümü kilitli (unsloth/trl çözümü torch'u değiştirmesin)
-        printf 'torch==%s\n' "$TORCH_VER" > /root/egitim-constraints.txt
+        { printf 'torch==%s\n' "$TORCH_VER"; printf '%s\n' $KISITLAR; } > "$EGITIM_CON"
+        chown "$TARGET_USER:$TARGET_USER" "$EGITIM_CON"
         # shellcheck disable=SC2086
-        pip_u install "${fl[@]}" -c /root/egitim-constraints.txt --extra-index-url "$TORCH_INDEX" $GEVSEK || return 1
-        # 3) dondur → depoya egitim/requirements.txt olarak konacak
-        run_u "$VENV_PY" -m pip freeze --exclude-editable > /root/egitim-requirements.txt
-        [[ "$CACHE_OK" == "1" ]] && install -m 644 /root/egitim-requirements.txt "$CACHE_DIR/egitim/requirements.txt"
-        # 4) wheel'leri önbelleğe al (ikinci kurulum çevrimdışı olsun)
-        if [[ "$CACHE_OK" == "1" ]]; then
-          pip_u download -d "$CACHE_DIR/wheels" --extra-index-url "$TORCH_INDEX" -r /root/egitim-requirements.txt || warn "wheel önbelleği doldurulamadı (kurulum yine tamam)."
-        fi
-        REQ_FILE="/root/egitim-requirements.txt"; WANT="req:$(sha256sum "$REQ_FILE" | cut -c1-16)"
-        warn "DONDURULDU: /root/egitim-requirements.txt → depoya 'egitim/requirements.txt' olarak koy (sonraki kurulumlar bundan kurar)."
+        pip_u install "${fl[@]}" -c "$EGITIM_CON" --extra-index-url "$TORCH_INDEX" $GEVSEK || return 1
       fi
     }
+    # Yalnız doğrulama geçtikten sonra: dondur → önbelleğe → wheel'leri indir
+    dondur(){
+      run_u "$VENV_PY" -m pip freeze --exclude-editable > "$EGITIM_REQ"; chown "$TARGET_USER:$TARGET_USER" "$EGITIM_REQ"
+      [[ "$CACHE_OK" == "1" ]] && install -m 644 "$EGITIM_REQ" "$CACHE_DIR/egitim/requirements.txt"
+      if [[ "$CACHE_OK" == "1" ]]; then
+        pip_u download -d "$CACHE_DIR/wheels" --extra-index-url "$TORCH_INDEX" -r "$EGITIM_REQ" || warn "wheel önbelleği doldurulamadı (kurulum yine tamam)."
+      fi
+      REQ_FILE="$EGITIM_REQ"; WANT="req:$(sha256sum "$REQ_FILE" | cut -c1-16)"
+      warn "DONDURULDU: $EGITIM_REQ → depoya 'egitim/requirements.txt' olarak koy (scp marvin:$EGITIM_REQ egitim/requirements.txt)."
+    }
     if kur_paketler && venv_verify; then
+      [[ "$GEVSEK_MODU" == "1" ]] && dondur
       echo "$WANT" > "$STAMP"
     elif [[ "$EGITIM_PYTHON" == "auto" && "$PY_YOLU" == "system" ]]; then
       warn "Sistem Python'u ile küme çözülmedi/doğrulanmadı → uv ile Python 3.12 deneniyor. Son 20 satır:"
       tail -n 20 "$ELOG" >&2 || true
       mk_venv_uv; PY_YOLU="uv312"
       if kur_paketler && venv_verify; then
+        [[ "$GEVSEK_MODU" == "1" ]] && dondur
         echo "$WANT" > "$STAMP"
         warn "Python yolu: uv312 — REHBER §7'ye işle."
       else
@@ -902,9 +917,14 @@ fi
 # Eğitim ortamı kabul ölçütleri (REHBER §7 / egitim/TATBIKAT.md ile aynı)
 if [[ "$EGITIM" == "1" && "$EGITIM_STATE" != "atlandı" ]]; then
   log "Eğitim ortamı kabul kontrolleri:"
-  k1="$(run_u "$VENV_PY" -c 'import torch, unsloth, bitsandbytes; print(torch.cuda.is_available(), torch.version.cuda)' 2>/dev/null || echo 'HATA')"
+  # unsloth import'ta banner basar; sonuç SON satırdır (18 Eyl 2026: banner yüzünden yanlış HATA).
+  k1="$(run_u "$VENV_PY" -c 'import torch, unsloth, bitsandbytes; print(torch.cuda.is_available(), torch.version.cuda)' 2>/dev/null | tail -n 1 || true)"
+  [[ -n "$k1" ]] || k1="HATA"
   echo "   torch/unsloth/bnb import → $k1   (beklenen: True 12.4)"
-  if "$LLAMA_BIN/llama-quantize" --help 2>&1 | grep -qi 'usage'; then echo "   llama-quantize --help    → OK"; else echo "   llama-quantize --help    → HATA"; EGITIM_FAIL=1; fi
+  # DİKKAT: '... | grep -q' KULLANMA — grep ilk eşleşmede çıkınca üretici SIGPIPE (141)
+  # alır ve pipefail boru hattını "başarısız" sayar (18 Eyl 2026 tatbikatı). Çıktıyı yakala.
+  qh="$("$LLAMA_BIN/llama-quantize" --help 2>&1 || true)"
+  if [[ "$qh" == *usage* ]]; then echo "   llama-quantize --help    → OK"; else echo "   llama-quantize --help    → HATA"; EGITIM_FAIL=1; fi
   if run_u "$VENV_PY" "$LLAMA_DIR/convert_hf_to_gguf.py" --help >/dev/null 2>&1; then echo "   convert_hf_to_gguf.py    → OK"; else echo "   convert_hf_to_gguf.py    → HATA"; EGITIM_FAIL=1; fi
   k4="$(su - "$TARGET_USER" -c 'echo $HF_HOME' 2>/dev/null)"
   echo "   HF_HOME (giriş kabuğu)   → ${k4:-BOŞ}   (beklenen: $MOUNT_POINT/hf; disk bağlı değilse BOŞ normaldir)"

@@ -466,9 +466,9 @@ Ne kurar:
 
 **Neden hızlı — NVMe önbellek.** İndirilen her şey (`.deb`, pip wheel, llama.cpp derlemesi, uv Python) model diskindeki `/mnt/models/cache/` altında tutulur. Disk formatı sağ atlattığı için ikinci kurulum internete çıkmadan biter: 65 Mbit ofis hattında ~12 dakikalık indirme → ~2 dakika. Disk bağlı değilse önbellek yok sayılır, her şey internetten gelir; sda'ya önbellek yazılmaz.
 
-**Paket pin'leri.** İlk başarılı kurulum `pip freeze` ile `/root/egitim-requirements.txt` üretir; bu dosya depoya `egitim/requirements.txt` olarak konur, Pi'ye senkronlanır ve sonraki kurulumlar **ondan** kurar (kaynak sırası: Pi → önbellek → yoksa gevşek liste + dondurma). Projeler kendi pin listesini getirirse oturum içinde venv'in üstüne kurar; bootstrap değişmez.
+**Paket pin'leri.** İlk başarılı kurulum `pip freeze` ile `/opt/egitim-venv/requirements.txt` üretir; bu dosya depoya `egitim/requirements.txt` olarak konur, Pi'ye senkronlanır ve sonraki kurulumlar **ondan** kurar (kaynak sırası: Pi → önbellek → yoksa gevşek liste + dondurma). Projeler kendi pin listesini getirirse oturum içinde venv'in üstüne kurar; bootstrap değişmez.
 
-**Python yolu.** Varsayılan sistem Python'u (3.13). Paket kümesi çözülmezse betik kendiliğinden `uv` ile Python 3.12 kurar ve venv'i onunla yapar; hangi yolun seçildiği `/opt/egitim-venv/.python-yolu` dosyasında ve özet ekranında yazar. *(Tatbikat sonucu buraya işlenecek: sistem 3.13 mü, uv 3.12 mi?)*
+**Python yolu — uv ile 3.12 (tatbikat sonucu, 18 Eyl 2026).** Sistem Python'u 3.13 ama bu kümeyle **kurulamıyor**: unsloth'un istediği ve torch 2.6 ile uyumlu son xformers (0.0.29.post3) için cp313 tekerleği yok; pip kaynaktan derlemeye kalkıp düşüyor. Bu yüzden bootstrap `uv` ile Python 3.12 kurar (ikili `/mnt/models/cache/uv/python` altında, formatı sağ atlatır) ve venv'i onunla yapar. Ayrıca `torchao<0.17` kısıtı var: unsloth_zoo torchao ister, 0.17+ torch 2.7 API'si kullanıyor (marvin'de ampirik: 0.13–0.16 çalışıyor). Sürücü/torch yükselince `EGITIM_PYTHON=system` yeniden denenir. Seçilen yol `/opt/egitim-venv/.python-yolu` dosyasında ve özet ekranında yazar.
 
 **Kabul ölçütleri** (bootstrap sonunda kendisi koşar; `egitim/TATBIKAT.md` ile aynı):
 
@@ -498,7 +498,7 @@ Hepsi ortam değişkeniyle ezilebilir, betik düzenlenmeden:
 | `AUTO_REBOOT` | `0` | `1` → sürücü sonrası kendi yeniden başlatır |
 | `AUTH_KEYS_URL` | Pi'nin `:8080/authorized_keys` | SSH anahtar listesi kaynağı |
 | `EGITIM` | `1` | `0` → eğitim ortamı adımı atlanır |
-| `EGITIM_PYTHON` | `auto` | `system` (3.13) / `uv312`; `auto` önce sistemi dener, olmazsa uv |
+| `EGITIM_PYTHON` | `uv312` | `system` (3.13 — bugün xformers yüzünden kurulamıyor) / `auto` (önce sistem, olmazsa uv) |
 | `LLAMA_TAG` | `v0.4.1` | llama.cpp sürüm etiketi (asla `latest`) |
 | `TORCH_INDEX` | `…/whl/cu124` | torch tekerlek dizini — sürücü 550 tavanı |
 | `CACHE_DIR` | `/mnt/models/cache` | NVMe önbelleği; disk bağlı değilse kullanılmaz |
@@ -787,7 +787,7 @@ Repo: **github.com/walbis/marvinpi** — 17 commit, 31 Ağustos – 15 Eylül 20
 | Ne | Durum |
 | --- | --- |
 | **MeshCentral'ın sunucu taraflı IDER'i** | Pi'ye kuruldu ve yapılandırıldı, ama **gerçek bir oturumla hiç denenmedi.** Çalışırsa ISO Pi'de durur ve kurtarma laptop'a bağımlı olmaktan çıkar. Çalışmazsa MeshCommander zaten yeterli — kayıp yok |
-| **bootstrap adım 10 — eğitim ortamı** (17 Eyl 2026) | Yazıldı, yerelde `bash -n` + shellcheck'ten geçti, **makinede hiç koşmadı.** Tatbikat planı ve doldurulacak rapor: `egitim/TATBIKAT.md`. Koşana kadar çalışıyor sayılmaz |
+| **bootstrap adım 10 — eğitim ortamı, taze kurulumda** | Çalışan makinede 18 Eyl 2026'da doğrulandı (kurulum 190 s, ikinci koşum 23 s, tüm kabul ölçütleri). **Format sonrası (Koşu C) henüz koşmadı** — `egitim/TATBIKAT.md` §3 |
 
 > Yukarıdaki "test edilmemiş her kod yolu kırıktır" dersi burada da geçerli: bu yol denenmeden **çalışıyor sayılmamalı.**
 

@@ -1,6 +1,6 @@
 # Tatbikat — bootstrap adım 10 (eğitim ortamı) — doldurulacak rapor
 
-**Durum:** ☐ yapılmadı · ☐ yapıldı, tarih: ________ · koşan: ________
+**Durum:** Koşu A+B ☑ 18 Eyl 2026 (Claude, çalışan makinede; Berkay AMT ile açtı) · Koşu C (format) ☐ bekliyor
 
 Kural: "test edilmemiş her kod yolu kırıktır." Adım 10 makinede hiç koşmadı. Bu belge
 koşulana kadar REHBER §11 "Henüz test edilmemiş" listesinde kalır. Tatbikatı **insan**
@@ -36,17 +36,17 @@ time sudo bash /tmp/b.sh 2>&1 | tee /tmp/bootstrap-A.log
 
 | Ölçüm | Beklenen | Gerçek |
 | --- | --- | --- |
-| Çıkış kodu | 0 | |
-| Toplam süre | 15-25 dk (65 Mbit) | |
-| "Eğitim ortamı :" satırı | `tamam (N sn)` | |
-| "python yolu" | `system` (3.13) — ya da `uv312` düştüyse **REHBER §7'ye işle** | |
-| "torch" | `2.6.0+cu124 12.4` | |
-| `/root/egitim-requirements.txt` | var, `torch==2.6.0+cu124` satırı içerir | |
-| `/mnt/models/cache/wheels` | dolu (`ls | wc -l` > 50) | |
-| `/mnt/models/cache/llama.cpp/llama.cpp-v0.4.1.tar.zst` | var | |
-| lmstudio.service | `active`; **model yüklü değil** (`lms-model status`) | |
+| Çıkış kodu | 0 | A1: 1 (bug 1-2) · A2: 1 (bug 4-6) · **A3: 0** (kabul satırı bug 7 ile yanlış HATA dedi, stamp yazıldı) |
+| Toplam süre | 15-25 dk (65 Mbit) | A1 379 s + A2 389 s + A3 190 s — üç koşum toplamı ~16 dk; A3 tek başına önbellekten |
+| "Eğitim ortamı :" satırı | `tamam (N sn)` | `tamam (172 sn)` |
+| "python yolu" | `uv312` (varsayılan; 3.13 xformers yüzünden elendi) | `uv312` (3.12.14) |
+| "torch" | `2.6.0+cu124 12.4` | `2.6.0+cu124 12.4` ✓ |
+| `/opt/egitim-venv/requirements.txt` | var, `torch==2.6.0+cu124` satırı içerir | 106 satır; torch 2.6.0+cu124, torchao 0.16.0, unsloth 2026.9.6, transformers 5.5.0, trl 0.24.0, xformers 0.0.29.post3 |
+| `/mnt/models/cache/wheels` | dolu (`ls | wc -l` > 50) | 107 wheel, 3.1 GB (pip cache 2.7 GB, llama 164 MB, uv 117 MB, apt 52 MB) |
+| `/mnt/models/cache/llama.cpp/llama.cpp-v0.4.1.tar.zst` | var | var (A1'de derlendi, A2/A3 önbellekten) |
+| lmstudio.service | `active`; **model yüklü değil** (`lms-model status`) | active, model yok ✓ |
 
-Sonra: `scp marvin:/root/egitim-requirements.txt egitim/requirements.txt` → depoya commit → Pi senkronu.
+Sonra: `scp marvin:/opt/egitim-venv/requirements.txt egitim/requirements.txt` → depoya commit → Pi senkronu.
 
 ## 2. Koşu B — aynı makinede ikinci koşum (idempotentlik)
 
@@ -56,11 +56,13 @@ time sudo bash /tmp/b.sh 2>&1 | tee /tmp/bootstrap-B.log
 
 | Ölçüm | Beklenen | Gerçek |
 | --- | --- | --- |
-| Çıkış kodu | 0 | |
-| Süre | < 90 sn | |
-| Günlükte "atlandı" / "zaten" | venv, llama.cpp, apt "hepsi kurulu", PATH | |
-| `grep -c "güncellendi\|kuruluyor\|indiriliyor" /tmp/bootstrap-B.log` | 0 (yalnız model tespiti/stamp doğrulaması) | |
-| İndirme | yok (`/var/log/marvin-bootstrap-egitim.log`'da yeni `Downloading` satırı yok) | |
+| Çıkış kodu | 0 | **0** ✓ |
+| Süre | < 90 sn | **23 s** (eğitim adımı 6 s — stamp + import doğrulaması) |
+| Günlükte "atlandı" / "zaten" | venv, llama.cpp, apt "hepsi kurulu", PATH | "venv zaten var (uv312)", "paketler güncel — atlandı", "llama.cpp zaten derli", "apt: hepsi kurulu" ✓ |
+| `grep -c "güncellendi\|kuruluyor\|indiriliyor" /tmp/bootstrap-B.log` | 0 (yalnız model tespiti/stamp doğrulaması) | 0 ✓ |
+| İndirme | yok (`/var/log/marvin-bootstrap-egitim.log`'da yeni `Downloading` satırı yok) | 0 `Downloading`/`Collecting` ✓ |
+
+Canlı makinede ayrıca doğrulandı (18 Eyl): sahiplik üçü de `marvin`; `su - marvin` → `python`=venv 3.12.14, `llama-quantize` PATH'te, `HF_HOME=/mnt/models/hf`; root etkilenmiyor; `lms-model load qwen3.8-27b` 3.6 s → API listeledi → VRAM 20 GB; `unload` → 2 MiB; `pin`/`unpin` drop-in yazıp sildi, `systemctl show` gördü.
 
 ## 3. Koşu C — format tatbikatı (asıl sınav)
 
@@ -90,12 +92,19 @@ ssh marvin 'sudo bash /root/bootstrap.sh' 2>&1 | tee /tmp/bootstrap-C.log   # /r
 
 | # | Nerede | Ne oldu | Düzeltme commit'i |
 | --- | --- | --- | --- |
-| 1 | | | |
+| 1 | bootstrap adım 10c (Koşu A, 18 Eyl) | Kısıt/pin dosyaları `/root`'a yazılıyordu; pip `marvin` olarak koşar, `/root` 700 → `Permission denied`. torch kurulmuştu, gerisi düştü; script gereksiz yere uv-3.12'ye geçti, orada da aynı hata. Pi'den gelen pinli liste de aynı yere yazılıyordu | dosyalar venv içine (`/opt/egitim-venv/{requirements,constraints}.txt`) |
+| 2 | bootstrap kabul kontrolleri (Koşu A, 18 Eyl) | `llama-quantize --help \| grep -q usage` + `pipefail`: grep ilk eşleşmede çıkınca binary SIGPIPE (141) → boru hattı "başarısız" → çalışan binary HATA göründü | çıktı değişkene alınıp `[[ == *usage* ]]` ile bakılıyor |
+| 4 | bootstrap adım 10c (Koşu A2) | Python 3.13: unsloth → xformers; torch 2.6 ile uyumlu son xformers 0.0.29.post3'ün cp313 tekerleği yok → pip kaynaktan derlemeye kalktı, build izolasyonunda torch yok → düştü. Kümenin 3.13'te kurulması bugün imkânsız | varsayılan `EGITIM_PYTHON=uv312`; `auto` 3 dk boşa harcıyordu |
+| 5 | bootstrap adım 10c (Koşu A2) | uv-3.12'de her şey kuruldu ama `import unsloth` → transformers → torchao 0.18 → `torch.utils._pytree.register_constant` yok (torch 2.7 API'si). Ampirik: torchao 0.13–0.16 OK, 0.17+ HATA | kısıt `torchao<0.17` (`KISITLAR`) |
+| 6 | bootstrap adım 10c (tasarım) | `pip freeze` doğrulamadan ÖNCE yapılıyordu → bozuk küme (torchao 0.18) önbelleğe pinli liste olarak yazıldı; sonraki koşum aynı bozuk listeyi kurardı | dondurma `venv_verify` geçince (`dondur()`) |
+| 3 | tatbikat sarmalayıcısı (script değil) | `sudo bash b.sh; echo; echo EXIT=$?` → `$?` echo'nun; EXIT=0 yanıltıcı | `rc=$?` hemen sonra |
+| 7 | bootstrap kabul kontrolleri (Koşu A3) | unsloth import'ta banner basıyor; `$k1` "🦥 Unsloth…" ile başlayınca `True*` karşılaştırması düştü, geçen kurulum HATA göründü | son satır alınıyor (`tail -n 1`) |
+| — | kapsam dışı (15 Eyl kurulumu) | hostname `192`: d-i ters DNS'ten IP'yi alıp ilk noktada kesmiş; preseed `netcfg/hostname=marvin` kazanmamış (`/etc/hosts`: `127.0.1.1 192.local 192`) | ayrı iş: preseed `late_command` → `echo marvin > /target/etc/hostname`; canlıda `hostnamectl set-hostname marvin` |
 
 ## 5. Tatbikat sonrası depoya işlenecekler
 
-- [ ] `egitim/requirements.txt` (dondurulmuş)
-- [ ] REHBER §7 "Python yolu" paragrafı: 3.13 mü, uv-3.12 mi
+- [x] `egitim/requirements.txt` (dondurulmuş, 18 Eyl A3)
+- [x] REHBER §7 "Python yolu" paragrafı: uv-3.12 (xformers cp313 yok) + torchao<0.17
 - [ ] REHBER §11 "Henüz test edilmemiş" satırı silinir; §10'a tarih ve süreler
 - [ ] DURUM.md "Kalan işler 1" kapanır; "Bitenler"e ölçümlerle girer
 - [ ] Bu dosyanın üstündeki durum kutusu
