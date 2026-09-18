@@ -1,6 +1,6 @@
 # Tatbikat — bootstrap adım 10 (eğitim ortamı) — doldurulacak rapor
 
-**Durum:** Koşu A+B ☑ 18 Eyl 2026 · **Koşu C ☑ 18 Eyl 2026** (Berkay: MeshCentral SIDER ile format; Claude: izleme + bootstrap) — TAMAMLANDI
+**Durum:** Koşu A+B ☑ · Koşu C ☑ · **Koşu D ☑ (tam otomatik, yeni bug yok)** — 18 Eyl 2026 — TAMAMLANDI
 
 Kural: "test edilmemiş her kod yolu kırıktır." Adım 10 makinede hiç koşmadı. Bu belge
 koşulana kadar REHBER §11 "Henüz test edilmemiş" listesinde kalır. Tatbikatı **insan**
@@ -31,7 +31,7 @@ Amaç: (1) paket kümesinin çözüldüğünü görmek, (2) `requirements.txt` �
 ```bash
 ssh marvin
 curl -fsSL http://192.168.1.166:8080/bootstrap.sh -o /tmp/b.sh
-time sudo bash /tmp/b.sh 2>&1 | tee /tmp/bootstrap-A.log
+time sudo bash /tmp/b.sh 2>&1 | sudo tee /var/log/marvin-bootstrap-A.log
 ```
 
 | Ölçüm | Beklenen | Gerçek |
@@ -108,6 +108,23 @@ ssh marvin 'sudo bash /root/bootstrap.sh' 2>&1 | tee /tmp/bootstrap-C.log   # /r
 | Süre (bootstrap, önbellekli) | `time` | **< 5 dk** (DKMS derlemesi dahil) | **7 dk** (C-1 196 s + reboot + C-2 158 s) — eğitim kısmı 66 s; sürücü/LM Studio indirmesi önbellek dışı |
 | Çıkış kodu | | 0 | 0 / 0 / 0 |
 | İkinci koşum | tekrar `sudo bash /root/bootstrap.sh` | < 90 sn, 0 | **30 s**, 0, sıfır indirme ✓ |
+
+## 3b. Koşu D — tam otomatik doğrulama (18 Eyl 2026, 19:39–20:04) ✓
+
+PR #2 + #3 birleşmiş, Pi senkronlu, preseed şablondan. **Elle sıfır adım** (SIDER bağla / Reset / `asama=3`'te kes dışında).
+
+| Aşama | Süre |
+| --- | --- |
+| SIDER reset → kurulumcu ağı | 4,5 dk |
+| `modprobe ahci` → `sdb` → mke2fs → base → GRUB → `asama=3` | 11 dk |
+| reboot → SSH (SIDER erken kesildi, udev beklemesi yok) | 1,3 dk — reset'ten **17 dk** |
+| preseed `late_command`: hostname `marvin` ✓, sudo parolasız ✓, `PasswordAuthentication no` ✓, `/root/bootstrap.sh` = main ✓ | — |
+| D-1 `AUTO_REBOOT=1`: sürücü + kendi reboot'u | 4,5 dk |
+| D-2: her şey, eğitim önbellekten 66 s, kabul ✓ | **156 s** |
+| D-3 ikinci koşum | 32 s, sıfır iş |
+| **Reset → hazır makine** | **~25 dk, 3 tık** |
+
+Yeni bug: **yok.** Küçük not: bootstrap günlüğü `/tmp`'ye yazılırsa `AUTO_REBOOT` sonrası kaybolur (tmpfs) → aşağıdaki komutlarda `/var/log/marvin-bootstrap-*.log` kullan.
 
 ## 4. Bulunan bug'lar
 
