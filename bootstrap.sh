@@ -108,6 +108,11 @@ gpu_ready(){ command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1
 driver_pkg_installed(){
   dpkg-query -W -f='${Status}' nvidia-driver 2>/dev/null | grep -q "install ok installed"
 }
+# DKMS modülü GERÇEKTEN derlenmiş mi? Başlık dizininin varlığı yetmez (18 Eyl 2026
+# tatbikatı: derleme hata verse de "derlendi" yazardı). Modül adı 'nvidia-current'.
+nvidia_module_built(){
+  ls /lib/modules/"$(uname -r)"/updates/dkms/nvidia-current.ko* >/dev/null 2>&1 ||   dkms status 2>/dev/null | grep -qE "^nvidia(-current)?/.*: installed"
+}
 
 if gpu_ready; then
   log "GPU hazır: $(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader)"
@@ -122,8 +127,12 @@ elif driver_pkg_installed; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y "linux-headers-$(uname -r)" 2>/dev/null || \
       DEBIAN_FRONTEND=noninteractive apt-get install -y linux-headers-amd64
     command -v dkms >/dev/null 2>&1 && dkms autoinstall >/dev/null 2>&1 || true
-    if [[ -e "/lib/modules/$(uname -r)/build" ]]; then
-      log "Başlıklar kuruldu, DKMS modülü derlendi."
+    if [[ -e "/lib/modules/$(uname -r)/build" ]] && nvidia_module_built; then
+      log "Başlıklar kuruldu, DKMS modülü derlendi (nvidia-current.ko doğrulandı)."
+    elif [[ -e "/lib/modules/$(uname -r)/build" ]]; then
+      warn "Başlıklar var ama nvidia modülü derlenmemiş. Derleme çıktısı:"
+      dkms autoinstall 2>&1 | tail -n 15 >&2 || true
+      die "nvidia DKMS derlemesi başarısız — reboot ÇÖZMEZ. Yukarıdaki çıktıya bak."
     else
       die "Çekirdek başlıkları kurulamadı. Elle: apt-get install linux-headers-\$(uname -r)"
     fi
@@ -167,8 +176,12 @@ else
       nvidia-driver firmware-misc-nonfree linux-headers-amd64
   # Başlıklar sonradan geldiyse modülü şimdi derlet.
   command -v dkms >/dev/null 2>&1 && dkms autoinstall >/dev/null 2>&1 || true
-  if [[ -e "/lib/modules/$(uname -r)/build" ]]; then
-    log "Çekirdek başlıkları yerinde, DKMS modülü derlendi."
+  if [[ -e "/lib/modules/$(uname -r)/build" ]] && nvidia_module_built; then
+    log "Çekirdek başlıkları yerinde, DKMS modülü derlendi (nvidia-current.ko doğrulandı)."
+  elif [[ -e "/lib/modules/$(uname -r)/build" ]]; then
+    warn "Başlıklar var ama nvidia modülü DERLENMEMİŞ — reboot çözmez. Derleme çıktısı:"
+    dkms autoinstall 2>&1 | tail -n 15 >&2 || true
+    die "nvidia DKMS derlemesi başarısız. Elle: dkms autoinstall; sonra bu script'i tekrar çalıştır."
   else
     warn "Çekirdek başlıkları YOK — nvidia modülü derlenemez, GPU açılmaz."
     warn "  Elle: apt-get install linux-headers-\$(uname -r) && dkms autoinstall"

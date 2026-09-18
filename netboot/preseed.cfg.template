@@ -55,19 +55,30 @@ d-i user-setup/encrypt-home boolean false
 # Sabit "/dev/sda" yazmak 0 baytlik disketi hedefler -> partman koku tanimlayamaz.
 # Bu yuzden disk CALISMA ANINDA bulunur: cikarilabilir OLMAYAN ve >200 GB olan ilk disk.
 d-i partman-auto/disk string /dev/sda
+# DIKKAT 2 — AHCI TUZAGI (18 Eyl 2026'da iki kurulumu sessizce takti):
+# disk-detect bazen 'ahci' modulunu YUKLEMIYOR (flap eden IDER USB aygiti hw-detect'in
+# taramasini yiyor; sata-modules udeb'i inmis oluyor ama modprobe edilmiyor). O zaman
+# SATA disk hic gorunmez, dongu bos doner, partman disksiz kalip SESSIZCE bekler.
+# Bu yuzden: ahci yuklu degilse modprobe, diski 60 sn'ye kadar bekle, her adimi Pi'ye
+# ?tani= ile raporla, disk yoksa ?asama=2x-DISK-YOK ile BAGIR (sessiz takilma yok).
 d-i partman/early_command string \
-    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=2-disk-araniyor" || true; \
-    for d in /sys/block/sd* /sys/block/nvme*; do \
-      [ -d "$d" ] || continue; \
-      n=$(basename "$d"); \
-      [ "$(cat $d/removable 2>/dev/null)" = "0" ] || continue; \
-      sz=$(cat $d/size 2>/dev/null || echo 0); \
-      [ "$sz" -gt 400000000 ] || continue; \
-      debconf-set partman-auto/disk "/dev/$n"; \
-      debconf-set grub-installer/bootdev "/dev/$n"; \
-      wget -q -O /dev/null "http://192.168.1.166:8080/?asama=2b-disk-secildi-$n-$sz" || true; \
-      break; \
-    done
+    P=http://192.168.1.166:8080; \
+    wget -q -O /dev/null "$P/?asama=2-disk-araniyor" || true; \
+    cls=""; for c in /sys/bus/pci/devices/*/class; do case "$(cat $c)" in 0x0106*|0x0104*|0x0108*) cls="$cls$(basename $(dirname $c))=$(cat $c),";; esac; done; \
+    wget -q -O /dev/null "$P/?tani=pci-depolama&v=$cls" || true; \
+    if ! grep -q '^ahci ' /proc/modules; then modprobe ahci; wget -q -O /dev/null "$P/?tani=modprobe-ahci&rc=$?" || true; fi; \
+    i=0; found=""; sz=0; while [ $i -lt 30 ]; do \
+      for d in /sys/block/sd* /sys/block/nvme*; do \
+        [ -d "$d" ] || continue; n=$(basename "$d"); \
+        [ "$(cat $d/removable 2>/dev/null)" = "0" ] || continue; \
+        sz=$(cat $d/size 2>/dev/null || echo 0); \
+        [ "$sz" -gt 400000000 ] || continue; found=$n; break; done; \
+      [ -n "$found" ] && break; i=$((i+1)); sleep 2; done; \
+    wget -q -O /dev/null "$P/?tani=blok&v=$(ls /sys/block | tr '\n' ',')&ahci=$(grep -c '^ahci ' /proc/modules)&ata=$(ls /sys/class/ata_port 2>/dev/null | wc -l)" || true; \
+    if [ -n "$found" ]; then \
+      debconf-set partman-auto/disk "/dev/$found"; debconf-set grub-installer/bootdev "/dev/$found"; \
+      wget -q -O /dev/null "$P/?asama=2b-disk-secildi-$found-$sz" || true; \
+    else wget -q -O /dev/null "$P/?asama=2x-DISK-YOK" || true; fi
 d-i partman-auto/method string regular
 # UEFI'de 'atomic' tarifi ESP URETMEZ -> partman koku tanimlayamaz ve
 # "kok dosya sistemi tanimli degil" hatasi verir (15 Eyl 2026'da yasandi).
@@ -125,6 +136,12 @@ d-i grub-installer/bootdev string /dev/sda
 d-i finish-install/reboot_in_progress note
 
 # ---- late_command ----
+# 4) sudo PAROLASIZ (/etc/sudoers.d/marvin): eski makinede elle konmuştu, preseed
+#    üretmiyordu; 18 Eyl 2026 tatbikatında format sonrası 'sudo bash /root/bootstrap.sh'
+#    uzaktan koşturulamadı (parola istedi). Uzaktan kurtarma bunu ŞART koşar; SSH zaten
+#    yalnız anahtarla olduğu için risk artmıyor.
+# 5) hostname 'marvin': d-i ters DNS'ten IP'yi alıp ilk noktaya kadar kesiyor ("192"),
+#    netcfg/hostname kazanmıyor (15 ve 18 Eyl'de iki kez görüldü). Dosyaya doğrudan yaz.
 # 1) SSH anahtarını Pi'den al: ilk açılışta 'ssh marvin' çalışsın.
 # 2) modprobe.blacklist=nvme'yi KURULU SİSTEMDEN temizle — yoksa açılan
 #    sistem de model diskini göremez ve /mnt/models boş kalır.
@@ -135,7 +152,7 @@ d-i preseed/early_command string \
     wget -q -O /dev/null "http://192.168.1.166:8080/?asama=1-preseed-okundu" || true
 
 d-i preseed/late_command string \
-    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=3-kurulum-bitti-son-ayarlar" || true; \
+    wget -q -O /dev/null "http://192.168.1.166:8080/?asama=3-kurulum-bitti-SIDER-IDER-SIMDI-KES" || true; \
     in-target mkdir -p /home/marvin/.ssh; \
     wget -q -O /target/home/marvin/.ssh/authorized_keys http://192.168.1.166:8080/authorized_keys || true; \
     in-target chown -R marvin:marvin /home/marvin/.ssh; \
@@ -144,4 +161,8 @@ d-i preseed/late_command string \
     in-target sed -i 's/ *modprobe\.blacklist=nvme//g' /etc/default/grub; \
     in-target /usr/sbin/update-grub || in-target /usr/sbin/grub-mkconfig -o /boot/grub/grub.cfg; \
     wget -q -O /target/root/bootstrap.sh http://192.168.1.166:8080/bootstrap.sh || true; \
-    in-target chmod 755 /root/bootstrap.sh
+    in-target chmod 755 /root/bootstrap.sh; \
+    echo "marvin ALL=(ALL) NOPASSWD: ALL" > /target/etc/sudoers.d/marvin; \
+    in-target chmod 440 /etc/sudoers.d/marvin; \
+    echo marvin > /target/etc/hostname; \
+    in-target sed -i 's/^127\.0\.1\.1.*/127.0.1.1\tmarvin/' /etc/hosts

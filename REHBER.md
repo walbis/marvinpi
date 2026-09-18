@@ -149,7 +149,7 @@ ssh marvin
 | Kurtarma dosyaları | `http://192.168.1.166:8080/` | Pi'nin dosya sunucusu |
 | Kurulum günlüğü | `http://192.168.1.166:8080/install.log` | Uzaktan kurulum sırasında okunur |
 | MeshCommander | `http://100.101.117.47:3001` | Uzaktan yönetim arayüzü |
-| MeshCentral | `https://100.101.117.47:4443` | Alternatif yönetim arayüzü |
+| MeshCentral | `https://100.101.117.47:4430` | **Önerilen** uzaktan kurulum arayüzü: SIDER (ISO Pi'de) |
 | AMT (donanım yönetimi) | `https://192.168.1.114:16993` | Kullanıcı `admin`, sertifika uyarısını geç |
 
 > **16992 asla açılmaz.** Bu ürün nesli (CSME 16.1) şifresiz portları (16992 / 16994 / 623) tamamen kaldırdı. Her zaman **16993** ve her zaman `https://`.
@@ -339,31 +339,45 @@ IDER (*IDE Redirection*), yönetim biriminin sunduğu bir numara: senin bilgisay
 
 Bu, makineye USB takmakla aynı şey — sadece uzaktan.
 
-### Adım adım
+### Adım adım — MeshCentral SIDER (önerilen, 18 Eyl 2026'da kanıtlandı)
 
-**1.** MeshCommander'ı aç: **http://100.101.117.47:3001** (Pi'de servis olarak çalışır, tailnet'ten her yerden erişilir).
+ISO **Pi'de** durur, akışı Pi yapar; Mac/laptop yalnızca düğmeye basar. Bağlantı hızın önemsizdir.
 
-**2.** Cihaz ekle / seç: `192.168.1.114`, kimlik doğrulama **Digest**, **TLS işaretli** (port otomatik 16993 olur), kullanıcı `admin`, parola AMT parolası.
+**1.** `https://100.101.117.47:4430` (sertifika uyarısını geç) → hesabınla gir.
 
-**3.** **IDER** düğmesine bas → ISO dosyasını seç → başlatma biçimi **"Immediate"** → oturumun kurulduğunu gör.
+**2.** Cihaz listesinde `192.168.1.114` (marvin) → cihaz sayfası → **Intel® AMT** sekmesi.
 
-**4.** **Power Actions → "Reset to IDE-R CDROM"**
+**3.** Yan yana iki düğme var: **IDER** (tarayıcı taraflı, ISO Mac'ten — kullanma) ve **SIDER** (sunucu taraflı). **SIDER**'a bas → dosya seçici Pi'deki "Files" alanını gösterir → `Public/marvin-v3.iso` → bağlan.
 
-**5.** Bundan sonra **hiçbir tuşa basılmaz.** Kurulum menüsü 10 saniye sonra kendiliğinden otomatik kuruluma girer.
+**4.** **Power Actions → "Reset to IDE-R CDROM"** (önce SIDER, sonra reset — ters sıra makineyi boş CD'den diske düşürür, zararsız).
 
-**6.** Kurulum bitince **IDER oturumunu durdur.** (Durdurmazsan makine tekrar sanal CD'den açmaya çalışır.)
+**5.** Bundan sonra **hiçbir tuşa basılmaz.** Kurulumcu 10 saniye sonra kendiliğinden başlar. İlerlemeyi Pi'den izle (aşağıda "Kurulumu izlemek").
 
-**7.** Makine diskten açılır. Sonra:
+**6.** Pi'nin erişim günlüğünde **`asama=3-kurulum-bitti-SIDER-IDER-SIMDI-KES`** göründüğü an **SIDER → Disconnect.** Kurulum bitmiş, `late_command` çalışmıştır; ISO'ya iş kalmamıştır.
+
+> **Bu adımı geciktirme.** 18 Eyl 2026'da SIDER bağlıyken reboot oldu, makine yine sanal CD'den açıldı ve 10 sn'lik otomatik menü **ikinci bir kurulumu başlatıp biten kurulumu sildi** (16 dk kayıp). Menüde "diskten aç" varsayılanı yoktur — bilerek: ISO tek amaçlıdır.
+
+**7.** Makine diskten açılır (~1 dk). Host anahtarı değişmiştir; önce eskisini sil, sonra bootstrap:
+
+```bash
+ssh-keygen -R 192.168.1.114
+```
 
 ```bash
 ssh marvin 'sudo bash /root/bootstrap.sh'
 ```
 
-> **Sıra önemli:** önce IDER oturumu, sonra güç komutu. Ters yaparsan makine boş bir sanal CD bulur ve diske düşer — zararsız ama zaman kaybı.
+Sürücü kurulduktan sonra "yeniden başlat" der: `ssh marvin 'sudo systemctl reboot'`, 1 dk sonra aynı komut tekrar. Kesintisiz istiyorsan `sudo AUTO_REBOOT=1 bash /root/bootstrap.sh`.
+
+**Yeni bir ISO üretilirse** MeshCentral'ın onu görmesi için Pi'de `/opt/meshcentral/meshcentral-files/domain/user-<kullanıcı>/Public/` altına konmalı (ya da web arayüzünden "Files"a yüklenmeli); depo dizininin kökü seçicide görünmez.
+
+### Yedek yol — MeshCommander (ISO laptop'ta)
+
+`http://100.101.117.47:3001` → cihaz `192.168.1.114`, **Digest**, **TLS**, `admin` → **IDER** → ISO'yu kendi diskinden seç → **Immediate** → **Reset to IDE-R CDROM**. IDER protokolü tarayıcıda çalıştığı için ISO senin makinende akar; yavaş bağlantıda sanal USB aygıtı flap eder ve kurulumcu takılabilir (18 Eyl 2026 tur 1). SIDER varken buna gerek yok.
 
 ### Ne kadar sürer
 
-15 Eylül 2026 tatbikatında ölçüldü: **5 dakika 22 saniye**. Buna 1,8 TB diskin biçimlendirilmesi ve paketlerin internetten indirilmesi dahil.
+15 Eylül 2026: **5 dakika 22 saniye** (preseed'den; MeshCommander, ofiste). 18 Eylül 2026 (SIDER, ofis dışından): reset → reboot **26 dk** — IDER'den açılış ~6 dk, `disk-detect` 2 dk, biçimlendirme ~6 dk, udev zaman aşımı 2 dk (SIDER erken kesilirse düşer), paketler internetten. Sonra bootstrap: sürücü 196 s + reboot + kalan her şey **158 s** (eğitim ortamı önbellekten 66 s) — toplam ~7 dk. Yani sıfırdan tam makine: **~35 dk, insan müdahalesi iki tık** (SIDER bağla/kes).
 
 ### Hangi ISO
 
@@ -402,11 +416,13 @@ curl -s http://192.168.1.166:8080/install.log | grep -v "reset high-speed USB" |
 
 > **Ders:** Bu üç pencere kurulmadan önce üç kurulum körlemesine denendi ve neden başarısız oldukları anlaşılamadı. Uzak günlük açıldıktan sonra sebep **tek satırda** görüldü. Görünürlüğü baştan kur; sonradan eklemek pahalı.
 
-### Bugünkü sınırlama
+### Kurulumcunun kendini raporlaması
 
-MeshCommander'da IDER protokolü **tarayıcıda** çalışır. Yani ISO dosyası, tarayıcıyı açtığın bilgisayarda bulunmalı — Pi'de durması yetmez. Kurtarma hâlâ "elinde ISO olan bir laptop" gerektiriyor.
+Preseed'in disk arama adımı artık Pi'ye tanı işaretleri de gönderir (`?tani=pci-depolama`, `?tani=modprobe-ahci`, `?tani=blok`) ve disk bulamazsa **`asama=2x-DISK-YOK`** ile bağırır. 18 Eyl 2026'da iki kurulum `disk-detect`'in `ahci` modülünü yüklememesi yüzünden **sessizce** takıldı — hiçbir günlük, hiçbir ekran yoktu. Preseed artık `modprobe ahci` deneyip diski 60 sn bekliyor; sessiz takılma sınıfı kapatıldı.
 
-Bunu kaldırmak için **MeshCentral** (`https://100.101.117.47:4443`) Pi'ye kuruldu; o sunucu tarafında IDER yapabiliyor, yani ISO Pi'de durur. Ancak bu yol henüz gerçek bir oturumla denenmedi — bkz. 11. Kalan işler.
+### İşletim sistemi ayaktayken — ISO'suz yol (planlı)
+
+OS ayakta ve SSH çalışıyorsa IDER'e hiç gerek yok: kurulumcu çekirdeği diske konup tek seferlik GRUB girişiyle aynı preseed'le açılabilir — Pi'den tek komut, laptop yok, SIDER bağla/kes yok. `marvin-yeniden-kur` olarak ayrı PR'da gelecek. Kural: **SSH varsa script, yoksa SIDER.**
 
 ## 7. bootstrap.sh — makineyi çalışır hale getiren betik
 
@@ -786,8 +802,8 @@ Repo: **github.com/walbis/marvinpi** — 17 commit, 31 Ağustos – 15 Eylül 20
 
 | Ne | Durum |
 | --- | --- |
-| **MeshCentral'ın sunucu taraflı IDER'i** | Pi'ye kuruldu ve yapılandırıldı, ama **gerçek bir oturumla hiç denenmedi.** Çalışırsa ISO Pi'de durur ve kurtarma laptop'a bağımlı olmaktan çıkar. Çalışmazsa MeshCommander zaten yeterli — kayıp yok |
-| **bootstrap adım 10 — eğitim ortamı, taze kurulumda** | Çalışan makinede 18 Eyl 2026'da doğrulandı (kurulum 190 s, ikinci koşum 23 s, tüm kabul ölçütleri). **Format sonrası (Koşu C) henüz koşmadı** — `egitim/TATBIKAT.md` §3 |
+| **`marvin-yeniden-kur` (ISO'suz, OS ayaktayken)** | Henüz yazılmadı — planlı, bkz. §6 |
+| **preseed `late_command` sudo/hostname satırları** | 18 Eyl'de eklendi, Pi'deki preseed yeniden üretildi; **bir sonraki kurulumda** doğrulanacak (bu turda elle yapıldı) |
 
 > Yukarıdaki "test edilmemiş her kod yolu kırıktır" dersi burada da geçerli: bu yol denenmeden **çalışıyor sayılmamalı.**
 

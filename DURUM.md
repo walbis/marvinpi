@@ -83,13 +83,19 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
      sabitlemek isteyen `sudo lms-model pin <anahtar>` (systemd drop-in, bootstrap ezmez).
      Model yüklü değilken LiteLLM üzerinden gelen istek hata döner — bilinçli.
      15 Eyl'deki "JIT kapalı + model sabitleme" kararının sabitleme yarısı geri alındı.
-6. **Eğitim ortamı (bootstrap adım 10) — çalışan makinede test edildi ✅ (18 Eyl 2026)** —
+6. **Eğitim ortamı (bootstrap adım 10) — format tatbikatı dahil test edildi ✅ (18 Eyl 2026)** —
    `/opt/egitim-venv` (**uv + Python 3.12**; torch 2.6.0+cu124, unsloth 2026.9.6, transformers 5.5,
    trl 0.24, peft 0.21, bitsandbytes 0.50, torchao 0.16), `/opt/llama.cpp` (`v0.4.1`, CPU, GGUF
    çevirme/niceleme), `HF_HOME=/mnt/models/hf`, NVMe önbelleği `/mnt/models/cache` (3.1 GB wheel).
    Ölçüm: önbellekten tam kurulum **190 s**, ikinci koşum **23 s**, sıfır indirme. Pinler
-   `egitim/requirements.txt`. **Format tatbikatı (Koşu C) henüz yapılmadı** — `egitim/TATBIKAT.md`.
+   `egitim/requirements.txt`. **Format tatbikatı (Koşu C) 18 Eyl'de yapıldı:** taze sistemde
+   sürücü 196 s + reboot + kalan her şey 158 s (eğitim 66 s, internet kullanılmadı), ikinci koşum 30 s.
    Sistem Python 3.13 bu kümeyle KURULAMIYOR (xformers cp313 tekerleği yok) — uv-3.12 kalıcı karar.
+7. **MeshCentral SIDER — 18 Eyl 2026'da KANITLANDI.** `https://100.101.117.47:4430` → cihaz →
+   Intel AMT → **SIDER** → `Public/marvin-v3.iso` → Reset to IDE-R CDROM. ISO Pi'de, akış Pi'den;
+   laptop bağımlılığı bitti. MeshCommander (ISO laptop'ta) yedek yol; yavaş bağlantıda IDER USB
+   aygıtı flap edip kurulumcuyu takıyor (tur 1). **`asama=3` görünür görünmez SIDER'ı kes** — yoksa
+   reboot yine sanal CD'den açar ve 10 sn'lik menü kurulumu baştan başlatır (tur 4'te yaşandı).
 5. **Güvenlik duvarı** — ufw etkin, `192.168.1.0/24` için 22 ve 1234 açık.
 6. **Uyku kapatıldı** — `sleep/suspend/hibernate/hybrid-sleep` mask, varsayılan hedef `multi-user.target`.
 7. **Wake-on-LAN** — `wol.service` (ethtool ile `wol g`), 1 Eylül'de bootstrap tarafından kuruldu.
@@ -105,14 +111,14 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
 
 ## Kalan işler (öncelik sırasıyla)
 
-1. **Eğitim ortamı — Koşu C (format tatbikatı)** — A/B çalışan makinede geçti (18 Eyl);
-   taze kurulumda henüz koşmadı. Sıra: PR birleşir → Pi'de `llm-repo-sync` yenilenir (FILES
-   listesi değişti: `sudo bash pi-setup.sh`) → IDER ile sıfırdan kurulum → `sudo bash
-   /root/bootstrap.sh` → `egitim/TATBIKAT.md` §3 tablosu. Beklenti: bootstrap < 5 dk (önbellekli).
-1b. **hostname `192`** — 15 Eyl kurulumundan beri makine adı `marvin` değil `192`
-   (`/etc/hosts`: `127.0.1.1 192.local 192`; d-i ters DNS'ten IP'yi almış, preseed
-   `netcfg/hostname` kazanmamış). Canlıda `sudo hostnamectl set-hostname marvin` + `/etc/hosts`;
-   kalıcı düzeltme preseed `late_command`'a `echo marvin > /target/etc/hostname`.
+1. **`marvin-yeniden-kur`** — OS ayaktayken ISO'suz/IDER'siz sıfırdan kurulum: kurulumcu
+   çekirdeği + initrd diske, tek seferlik GRUB girişi, aynı preseed; Pi'den tek komut. Ayrı PR.
+   Kural: SSH varsa script, yoksa SIDER (REHBER §6).
+2. **Preseed `late_command` sudo/hostname satırları bir sonraki kurulumda doğrulanacak** —
+   18 Eyl'de eklendi (Pi'deki preseed şablondan yeniden üretildi) ama o turda elle yapıldı.
+3. **Preseed render'ı senkrona bağlanmalı** — Pi'deki `preseed.cfg` şablon + parola karmasından
+   üretiliyor; bugün elle üretildi. `llm-repo-sync`'e render adımı eklenirse şablon depoda
+   değişince Pi kendiliğinden tazelenir (dünkü inceleme bulgusu; bugün bedeli ödendi).
 2. ~~Router'da IP rezervasyonu~~ → 15 Eyl'de yapıldı. ~~JIT'i kapatma~~ → 15 Eyl'de yapıldı.
 3. **(Opsiyonel) ISO'yu Pi'ye taşı** — MeshCentral sunucu taraflı IDER yapar, o zaman ISO
    Pi'de durur ve kurtarma laptop'a bağımlı olmaz. Şu an MeshCommander yeterli ama ISO
@@ -123,11 +129,14 @@ marvin'e giriş **SSH anahtarıyla** olur. `sudo` her iki makinede de şifre ist
   `netboot/` dosyaları duruyor ama başka bir switch/segment olmadan kullanılamaz.
 
 ### Bitenler (31 Ağu – 17 Eyl 2026)
+- ✅ **18 Eyl: FORMAT TATBİKATI #2 (Koşu C) — SIDER ile, ofis dışından.** 4 kurulum turu
+  (2'si `ahci` yüzünden sessiz takıldı, 1'i SIDER kesilmediği için kaza), sonunda taze sistem +
+  bootstrap 7 dk. **13 bug** bulundu/düzeltildi (`egitim/TATBIKAT.md` §4) — en önemlileri:
+  d-i `disk-detect` `ahci`'yi yüklemiyor (preseed artık `modprobe ahci` + tanı işaretleri +
+  `2x-DISK-YOK`), parolasız sudo ve hostname preseed'de yoktu (eklendi), SIDER-kes zamanlaması,
+  SSH host anahtarı, DKMS "derlendi" kontrolü. MeshCentral SIDER kanıtlandı; hostname `marvin`.
 - ✅ **18 Eyl:** bootstrap adım 10 (eğitim ortamı + NVMe önbellek + `lms-model`) çalışan
-  makinede üç turda oturdu; 7 bug bulundu ve düzeltildi (`egitim/TATBIKAT.md` §4): /root'a
-  yazılan pin dosyası, `grep -q`+pipefail SIGPIPE, Python 3.13'te xformers, torchao≥0.17,
-  doğrulamadan önce dondurma, banner ayrıştırma. Model açılışta yüklenmiyor; `lms-model`
-  load/unload/pin/unpin doğrulandı. Format tatbikatı (Koşu C) bekliyor.
+  makinede üç turda oturdu; 7 bug düzeltildi. Model açılışta yüklenmiyor; `lms-model` doğrulandı.
 - ✅ **15 Eyl:** AMT ACM'e alındı (MEBx + G3 reset) → uzaktan güç/reset/boot-order çalışıyor.
 - ✅ **15 Eyl:** IP rezervasyonu yapıldı (modem, `60:cf:84:76:49:42` → `.114`).
 - ✅ **15 Eyl:** BIOS "Wait for F1 If Error" kapatıldı — iki haftalık takılmanın sebebi.
